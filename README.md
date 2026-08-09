@@ -176,8 +176,9 @@ node packages/reactive-axi/bin/reactive-axi.js <path-to-a-react-app>
 This is a pnpm workspace: `packages/reactive-axi` is the published CLI, `fixtures/*` are throwaway real apps used to validate against actual dev servers.
 
 ```sh
-pnpm install                                # from the repo root
-pnpm --filter reactive-axi run check        # lint + format check + typecheck + test
+pnpm install                                # from the repo root - installs every fixture too
+pnpm --filter reactive-axi run check        # build + lint + format check + typecheck + test
+pnpm --filter reactive-axi run build        # bundle bin/reactive-axi.js -> dist/cli.mjs
 pnpm --filter reactive-axi test             # node:test only
 pnpm --filter reactive-axi run lint         # ESLint
 pnpm --filter reactive-axi run format:check # Prettier check
@@ -186,7 +187,7 @@ pnpm --filter reactive-axi run build:skill  # Regenerate the installable skill
 pnpm --filter reactive-axi run build:plugin # Regenerate plugin.json from package.json
 ```
 
-> The publishable bundle (`pnpm --filter reactive-axi run build`) isn't wired up yet - source runs directly under Node's own ESM loader today. Contributions welcome.
+CI runs `pnpm --filter reactive-axi run check` on every push and PR (see `.github/workflows/ci.yml`) - it installs the whole workspace, including every fixture, so the real integration tests that spawn each fixture's actual dev server run for real instead of skipping themselves.
 
 ## License
 
