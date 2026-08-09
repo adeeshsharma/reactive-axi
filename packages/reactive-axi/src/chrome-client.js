@@ -1,6 +1,5 @@
 // The trusted top-level "chrome" page. Plain, unbundled script loaded via <script src> - no
-// ES module imports (mirrors lavish-axi's chrome-client.js constraint exactly, for the same
-// reason: it is served as a raw static file, not run through a bundler).
+// ES module imports, because it is served as a raw static file, not run through a bundler.
 const sessionDataElement = document.getElementById("reactive-axi-session");
 const sessionData = JSON.parse(sessionDataElement?.textContent || "{}");
 const key = String(sessionData.key || "");

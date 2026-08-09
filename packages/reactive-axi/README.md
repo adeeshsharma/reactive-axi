@@ -1,6 +1,6 @@
 # reactive-axi
 
-Click any element in your live React app (Vite, TanStack Start, Next.js Pages/App Router, or Create React App) and send feedback straight to your coding agent — the [Lavish Editor](https://github.com/kunchenguid/lavish-axi) interaction model, applied to a running dev server instead of a static HTML file. The framework and React version are auto-detected, shown right in the chrome shell's topbar.
+Click any element in your live React app (Vite, TanStack Start, Next.js Pages/App Router, or Create React App) and send feedback straight to your coding agent, resolved to the exact source file and line before it ever reaches them. The framework and React version are auto-detected, shown right in the chrome shell's topbar.
 
 **Status:** Phase 1 (Vite) and Phase 2 (multi-framework + React-version support) are both complete and verified end-to-end. See `../../memory-bank/` at the repo root for current progress and `../../../.claude/plans/ok-good-i-will-replicated-pretzel.md` for the full phased plan.
 

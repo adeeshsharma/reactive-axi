@@ -10,7 +10,7 @@ metadata:
 
 # Reactive Editor
 
-Reactive-Axi lets a human annotate a live, running React app (Vite, Next.js, Create React App, or TanStack Start) directly in the browser and send feedback to a coding agent - the same review-and-feedback loop Lavish Editor uses for static HTML artifacts, applied to a live dev server instead. Run `npx -y reactive-axi <project-dir>` to open a review session, then `npx -y reactive-axi poll <project-dir>` to wait for feedback.
+Reactive-Axi lets a human annotate a live, running React app (Vite, Next.js, Create React App, or TanStack Start) directly in the browser and send feedback to a coding agent, with every click resolved to the exact source file and line. Run `npx -y reactive-axi <project-dir>` to open a review session, then `npx -y reactive-axi poll <project-dir>` to wait for feedback.
 
 You do not need reactive-axi installed globally - invoke it with `npx -y reactive-axi <project-dir>`.
 If reactive-axi output shows a follow-up command starting with `reactive-axi`, run it as `npx -y reactive-axi ...` instead.

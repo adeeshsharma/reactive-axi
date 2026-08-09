@@ -19,8 +19,7 @@ function skillCommandText(text) {
 
 // Agent Skills allows only these top-level frontmatter keys; a client that cannot validate a
 // skill against this list is expected to skip it rather than guess. Everything else lives
-// under `metadata`. Mirrors the same constraint lavish-axi's own skill.js documents and
-// enforces - the Agent Skills spec is shared, not project-specific.
+// under `metadata`.
 export const ALLOWED_SKILL_FRONTMATTER_KEYS = Object.freeze([
   "allowed-tools",
   "compatibility",

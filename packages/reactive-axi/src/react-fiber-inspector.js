@@ -8,9 +8,8 @@ import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 // Split in two halves for a real, load-bearing reason (not just organization):
 //   1. Browser-shippable pure functions below - hook install, DOM->fiber lookup, and stack-
 //      frame parsing are all self-contained (no external deps), so they ship into the
-//      injected SDK the same way lavish-axi ships artifact-sdk.js/mermaid-node.js: literally
-//      serialized via fn.toString() into a <script> tag, tested here in plain Node against
-//      mocked fiber/DOM objects.
+//      injected SDK by literally serializing them via fn.toString() into a <script> tag,
+//      tested here in plain Node against mocked fiber/DOM objects.
 //   2. Server-side resolution at the bottom of this file needs @jridgewell/trace-mapping - a
 //      real npm package with its own module graph - which cannot be shipped via toString().
 //      It runs in the control server process instead, fetching the transformed file (which
@@ -105,10 +104,9 @@ export function parseCallSiteFrame(stack) {
 }
 
 // Exported (not a private helper) because resolveClickTarget calls it, and the SDK-building
-// step (server.js's createSdkJs-equivalent) re-declares every exported function of this
-// module as a same-scope const before invoking resolveClickTarget in the browser - an
-// unexported helper referenced by a shipped function would be a ReferenceError at runtime,
-// mirroring the exact discipline lavish-axi's mermaid-node.js documents for the same reason.
+// step (server.js's createSdkJs) re-declares every exported function of this module as a
+// same-scope const before invoking resolveClickTarget in the browser - an unexported helper
+// referenced by a shipped function would be a ReferenceError at runtime.
 export function buildSelector(el) {
   const parts = [];
   let node = el;

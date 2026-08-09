@@ -20,7 +20,7 @@
 <h3 align="center">Your live React app, reviewable by anyone, in one click.</h3>
 
 <p align="center">
-  <!-- Demo GIF/screenshot goes here -->
+  <img alt="Reactive Editor demo: clicking the counter button, queuing feedback, sending it, and watching the live app hot-reload with the fix applied" src="media/demo.gif" width="960" />
 </p>
 
 > [!NOTE]

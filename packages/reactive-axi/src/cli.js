@@ -16,9 +16,8 @@ const RESERVED = new Set(RESERVED_COMMANDS);
 
 const DESCRIPTION =
   "Reactive-Axi lets a human annotate a live, running React app (Vite, Next.js, Create React App, or TanStack Start) " +
-  "directly in the browser and send feedback to a coding agent - the same review-and-feedback loop Lavish Editor uses " +
-  "for static HTML artifacts, applied to a live dev server instead. " +
-  "Run `reactive-axi <project-dir>` to open a review session, then `reactive-axi poll <project-dir>` to wait for feedback.";
+  "directly in the browser and send feedback to a coding agent, with every click resolved to the exact source file " +
+  "and line. Run `reactive-axi <project-dir>` to open a review session, then `reactive-axi poll <project-dir>` to wait for feedback.";
 
 export const POLL_WAKE_PATH_RULES = Object.freeze([
   "Keep the poll in the foreground by default and let it return the feedback directly to the agent.",

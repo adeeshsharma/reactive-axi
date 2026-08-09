@@ -7,9 +7,8 @@ export const LOOPBACK_HOST = "127.0.0.1";
 export const IPV6_LOOPBACK_HOST = "::1";
 
 // Binding to a wildcard address means "all interfaces" - it is not itself a connectable
-// target, so the CLI's local control channel falls back to the matching-family loopback.
-// Mirrors lavish-axi's paths.js exactly (same rationale: macOS/BSD IPV6_V6ONLY defaults on,
-// so a ::-bound socket rejects IPv4 loopback connections).
+// target, so the CLI's local control channel falls back to the matching-family loopback
+// (macOS/BSD IPV6_V6ONLY defaults on, so a ::-bound socket rejects IPv4 loopback connections).
 const WILDCARD_BIND_LOOPBACK = new Map([
   ["0.0.0.0", LOOPBACK_HOST],
   ["::", IPV6_LOOPBACK_HOST],
@@ -66,18 +65,17 @@ export async function ensureStateDir() {
 }
 
 // The one control server's port - handles /api/sessions, /api/poll, prompts, SSE, the
-// chrome UI, and /__open-in-editor. Analogous to lavish-axi's single server port.
+// chrome UI, and /__open-in-editor.
 export function defaultPort() {
   return Number(process.env.REACTIVE_AXI_PORT || 4388);
 }
 
-// Reactive-Axi cannot mirror lavish-axi's "one server, many sessions via /artifact/:key/
-// path prefix" model for the artifact itself: a live dev server's own asset requests
-// (/@vite/client, /src/main.jsx, HMR websocket, etc.) are root-relative and assume they
-// own the whole origin - path-prefixing would break them. So each session gets its own
-// dedicated, dynamically-allocated port pair (internal dev-server port + public proxy
-// port), found fresh per session rather than fixed via env vars. Only the control server
-// (session/poll/prompts/SSE) stays a single shared port, matching lavish-axi.
+// A single shared server can't also serve the artifact itself the way it serves the control
+// routes: a live dev server's own asset requests (/@vite/client, /src/main.jsx, HMR
+// websocket, etc.) are root-relative and assume they own the whole origin - path-prefixing
+// would break them. So each session gets its own dedicated, dynamically-allocated port pair
+// (internal dev-server port + public proxy port), found fresh per session rather than fixed
+// via env vars. Only the control server (session/poll/prompts/SSE) stays a single shared port.
 export function findFreePort(host = LOOPBACK_HOST) {
   return new Promise((resolve, reject) => {
     const server = createServer();

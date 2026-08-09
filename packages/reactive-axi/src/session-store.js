@@ -2,18 +2,17 @@ import crypto from "node:crypto";
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-// Same shape as lavish-axi's SessionStore: one JSON state file, read-modify-write on every
-// mutation, serialized through an in-process promise chain (no external locking - correct
-// because this is one local process talking to one local file, not a distributed system).
+// One JSON state file, read-modify-write on every mutation, serialized through an in-process
+// promise chain (no external locking - correct because this is one local process talking to
+// one local file, not a distributed system).
 //
-// The one structural difference from lavish-axi: session identity is the project ROOT
-// directory, not a single file, and each session additionally carries "runtime" state (the
-// dynamically-allocated dev-server/proxy port pair - see paths.js's findFreePort) that is
-// NOT durable across control-server restarts. A dev-server child process spawned by this
-// control server dies with it; on resume, the in-memory session manager (server.js) must
-// re-verify liveness and respawn + re-allocate fresh ports rather than trusting the last
-// persisted port numbers as still-live. Persisted runtime fields are "last known", not a
-// guarantee.
+// Session identity is the project ROOT directory, not a single file, and each session
+// additionally carries "runtime" state (the dynamically-allocated dev-server/proxy port pair
+// - see paths.js's findFreePort) that is NOT durable across control-server restarts. A
+// dev-server child process spawned by this control server dies with it; on resume, the
+// in-memory session manager (server.js) must re-verify liveness and respawn + re-allocate
+// fresh ports rather than trusting the last persisted port numbers as still-live. Persisted
+// runtime fields are "last known", not a guarantee.
 
 const REACT_TARGET_TYPE = "react-component";
 const MAX_TEXT_LEN = 4000;
@@ -187,7 +186,7 @@ export class SessionStore {
 
   // `endedBy` distinguishes a human ending review from the browser chrome ("user") from an
   // agent explicitly closing the loop via `reactive-axi end` ("agent"). Only a user-initiated
-  // end blocks a plain reopen - mirrors lavish-axi's session-store.js exactly.
+  // end blocks a plain reopen.
   async endSession(key, endedBy = "agent") {
     return this.runExclusive(async () => {
       const state = await this.readState();
@@ -282,14 +281,12 @@ function normalizePrompt(prompt) {
 function normalizeTarget(target) {
   if (!target || typeof target !== "object" || Array.isArray(target)) return null;
   if (target.type === REACT_TARGET_TYPE) return normalizeReactComponentTarget(target);
-  // text-range and any other/legacy target shapes pass through unchanged, mirroring
-  // lavish-axi's session-store.js normalizeTarget default case.
+  // text-range and any other/legacy target shapes pass through unchanged.
   return JSON.parse(JSON.stringify(target));
 }
 
-// Validate and canonicalize a react-component target coming back from the browser -
-// strips unknown/hostile fields to a fixed shape before it reaches state.json and the
-// agent, mirroring lavish-axi's normalizeMermaidNodeTarget/normalizeExcalidrawSceneTarget.
+// Validate and canonicalize a react-component target coming back from the browser - strips
+// unknown/hostile fields to a fixed shape before it reaches state.json and the agent.
 export function normalizeReactComponentTarget(target) {
   return {
     type: REACT_TARGET_TYPE,

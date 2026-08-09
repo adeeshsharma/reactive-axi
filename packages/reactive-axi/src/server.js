@@ -60,12 +60,11 @@ export async function serve({
   const writeLog = typeof log === "function" ? log : (line) => process.stderr.write(`${line}\n`);
   const logEvent = verbose ? (line) => writeLog(`[reactive-axi] ${line}`) : null;
 
-  // DNS-rebinding guard - same rationale and mechanism as lavish-axi's server.js: a
-  // same-origin/CSRF check alone does not stop a page that rebinds its own domain to
-  // 127.0.0.1, since the rebound page sends its hostile domain in both Origin and Host. Only
-  // a Host-header allowlist does. This matters MORE here than it did for lavish-axi: the
-  // per-session proxy port doesn't just serve one HTML file, it re-exposes a live dev
-  // server's full uncompiled source tree - a materially larger surface (see
+  // DNS-rebinding guard: a same-origin/CSRF check alone does not stop a page that rebinds
+  // its own domain to 127.0.0.1, since the rebound page sends its hostile domain in both
+  // Origin and Host. Only a Host-header allowlist does. This is a real, load-bearing risk
+  // here: the per-session proxy port doesn't just serve one HTML file, it re-exposes a live
+  // dev server's full uncompiled source tree - a materially larger surface (see
   // memory-bank/techContext.md).
   const allowedHostnames = buildAllowedHostnames({ host, linkHost: linkHostName, allowedHosts });
   if (!allowsAllHosts(allowedHosts)) {
@@ -120,9 +119,9 @@ export async function serve({
 
   // Idempotent: if a dev server + proxy are already running and healthy for this session,
   // reuse them. Otherwise (first open, or a respawn after a control-server restart killed
-  // the previous child) spawn fresh and record the new port allocation. Mirrors lavish-axi's
-  // "is the artifact still on disk" resumability check, adapted for a live child process
-  // instead of a static file (see memory-bank's noted session-liveness risk).
+  // the previous child) spawn fresh and record the new port allocation - the "is it still
+  // alive" resumability check for a live child process instead of a static file (see
+  // memory-bank's noted session-liveness risk).
   async function ensureSessionRuntime(key, projectRoot) {
     if (devServers.isAlive(key) && proxies.has(key)) return;
     if (proxies.has(key)) {
@@ -764,13 +763,12 @@ function formatStackLabel(session) {
   return parts.join(" \u00b7 ");
 }
 
-// The injected SDK, composed the same way lavish-axi's createSdkJs does: real,
-// separately-unit-tested Node functions from react-fiber-inspector.js are serialized via
-// fn.toString() into a self-executing script, so the browser runs byte-identical logic to
-// what test/react-fiber-inspector.test.js verifies against mocked objects and the real
-// fixture app. Only browser-safe exports (no @jridgewell/trace-mapping, no `fetch`-based
-// server resolution) are included here - see react-fiber-inspector.js's own module-level
-// comment for why the split exists.
+// The injected SDK: real, separately-unit-tested Node functions from react-fiber-inspector.js
+// are serialized via fn.toString() into a self-executing script, so the browser runs
+// byte-identical logic to what test/react-fiber-inspector.test.js verifies against mocked
+// objects and the real fixture app. Only browser-safe exports (no @jridgewell/trace-mapping,
+// no `fetch`-based server resolution) are included here - see react-fiber-inspector.js's own
+// module-level comment for why the split exists.
 export function createSdkJs(key) {
   return `(() => {
 const key = ${JSON.stringify(key)};
@@ -791,10 +789,10 @@ installReactDevtoolsHook();
 // which clicks do what. Toggle it from the chrome, not from in here.
 let annotateMode = true;
 
-// A crosshair cursor over the ENTIRE app while annotate mode is active is the same kind of
-// site-wide affordance lavish-axi's own artifact-sdk.js uses - it needs to be obvious, at a
-// glance and without looking at the toolbar, which mode you're in before you click something
-// in what might be a real, stateful app.
+// A crosshair cursor over the ENTIRE app while annotate mode is active is a deliberate,
+// site-wide affordance - it needs to be obvious, at a glance and without looking at the
+// toolbar, which mode you're in before you click something in what might be a real,
+// stateful app.
 const CURSOR_STYLE_ID = "reactive-axi-cursor-style";
 function applyAnnotationCursor(enabled) {
   let style = document.getElementById(CURSOR_STYLE_ID);

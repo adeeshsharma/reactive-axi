@@ -4,8 +4,8 @@
 // plugin.json and skills/reactive-editor must stay listed in package.json's `files`.
 //
 // Scope note: this module only generates the manifest. It deliberately does not include
-// lavish-axi's local-client registration logic (linking into VS Code/Cursor/Copilot CLI
-// config, junction/symlink handling on Windows) - that's real, separate work for a future
+// local-client registration logic (linking into VS Code/Cursor/Copilot CLI config,
+// junction/symlink handling on Windows) - that's real, separate work for a future
 // `reactive-axi setup plugin` command, not part of "the skill exists and is accurate."
 
 import { fileURLToPath } from "node:url";
