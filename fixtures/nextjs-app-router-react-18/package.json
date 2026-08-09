@@ -1,0 +1,21 @@
+{
+  "name": "nextjs-app-router-react-18",
+  "description": "Fixture: Next.js App Router (same Next major as nextjs-app-router) with react/react-dom overridden to ^18 - App Router requires 18+, not specifically 19, so this stays on the SAME Next major rather than needing an old Next release.",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "next": "16.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "vite-react-16",
+  "description": "Fixture: Vite + React 16.14 (legacy ReactDOM.render, classic JSX runtime) - the hard architectural floor for click-to-source resolution, since pre-Fiber React (<16) has no fiber tree to walk.",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "16.14.0",
+    "react-dom": "16.14.0"
+  },
+  "devDependencies": {
+    "@types/react": "^16.14.60",
+    "@types/react-dom": "^16.9.24",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0"
+  }
+}

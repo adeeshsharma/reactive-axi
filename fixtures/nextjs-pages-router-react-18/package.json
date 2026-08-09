@@ -1,0 +1,21 @@
+{
+  "name": "nextjs-pages-router-react-18",
+  "description": "Fixture: Next.js Pages Router (same Next major as nextjs-pages-router) with react/react-dom overridden to ^18 - the debugSource-era side of the 18-vs-19 bookend pair.",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "next": "16.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0"
+  }
+}
