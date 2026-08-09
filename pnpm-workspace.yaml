@@ -4,7 +4,12 @@ packages:
 onlyBuiltDependencies:
   - esbuild
 allowBuilds:
-  core-js: set this to true or false
-  core-js-pure: set this to true or false
+  # core-js/core-js-pure (transitive polyfill deps, likely via CRA's babel toolchain) and
+  # unrs-resolver (a native ESLint import-resolver optimization) all work fine today without
+  # their postinstall scripts running - confirmed by the full check pipeline passing without
+  # them. Explicitly false, not left as an unresolved prompt, so this never blocks pnpm's
+  # automatic deps-sync check in a non-interactive environment like CI.
+  core-js: false
+  core-js-pure: false
   esbuild: true
-  unrs-resolver: set this to true or false
+  unrs-resolver: false

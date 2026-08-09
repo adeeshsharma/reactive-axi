@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    # Ubuntu only for now - Windows process-group handling for the CRA/webpack-dev-server
+    # adapter is a known, not-yet-done gap (see memory-bank's hardening notes), so a Windows
+    # run would fail for an already-understood reason rather than surface something new.
+    # Expand the matrix once that's addressed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      # Installs the whole workspace, including every fixtures/* app - not just
+      # packages/reactive-axi. The real integration tests (test/dev-server-manager.test.js
+      # and friends) spawn each fixture's actual dev server and skip themselves when that
+      # fixture's own node_modules isn't installed, so this is what makes CI exercise real
+      # dev servers instead of quietly skipping down to unit tests only.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter reactive-axi run check
