@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.3...reactive-axi-v0.0.4) (2026-08-10)
+
+
+### Features
+
+* add Vue and Svelte support, fix broken npm installs, refresh docs ([#4](https://github.com/adeeshsharma/reactive-axi/issues/4)) ([368b58a](https://github.com/adeeshsharma/reactive-axi/commit/368b58ad44ee626b780c55cfeb865062dad35449))
+
 ## [0.0.3](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.2...reactive-axi-v0.0.3) (2026-08-10)
 
 
