@@ -46,6 +46,13 @@ jobs:
       - run: pnpm --filter reactive-axi run check
         if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
 
+      # Trusted Publisher (OIDC) exchange needs npm >=11.5.1 - actions/setup-node's
+      # bundled npm for a given Node version lags behind that, and an older npm silently
+      # falls back to an unauthenticated publish attempt (404, not a clear auth error)
+      # instead of using the OIDC token at all.
+      - run: npm install -g npm@latest
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
+
       - run: npm publish --access public --provenance
         if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
         working-directory: packages/reactive-axi
