@@ -195,10 +195,22 @@ function commitCard({ alsoSend }) {
       item.text = text;
     }
   } else {
+    // The resolution tag tells us which inspector produced this (react-fiber-inspector.js,
+    // vue-inspector.js, or svelte-inspector.js) - the target `type` sent to the server has to
+    // match, since session-store.js's normalizeTarget dispatches strictly on it and each
+    // framework's normalizer strips to its own fixed field shape. Overincluding fields the
+    // target type doesn't use (e.g. `transformedUrl` for a Vue target) is harmless - the
+    // server-side normalizer only ever picks the fields its own shape declares.
+    const targetType =
+      pendingSelection?.resolution === "vue-component"
+        ? "vue-component"
+        : pendingSelection?.resolution === "svelte-component"
+          ? "svelte-component"
+          : "react-component";
     const target =
       pendingSelection && !pendingSelection.error
         ? {
-            type: "react-component",
+            type: targetType,
             selector: pendingSelection.selector || "",
             componentName: pendingSelection.componentName || "",
             resolution: pendingSelection.resolution || "debugSource",

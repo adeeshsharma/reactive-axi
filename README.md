@@ -17,19 +17,19 @@
   /></a>
 </p>
 
-<h3 align="center">Your live React app, reviewable by anyone, in one click.</h3>
+<h3 align="center">Your live React, Vue, or Svelte app, reviewable by anyone, in one click.</h3>
 
 <p align="center">
-  <img alt="Reactive Editor demo: clicking the counter button, queuing feedback, sending it, and watching the live app hot-reload with the fix applied" src="media/demo.gif" width="960" />
+  <img alt="Reactive Editor demo: queuing two annotations on a live React app, sending them as a batch to the agent, watching both fixes hot-reload live with the agent's reply landing in chat, then a look at every supported tech stack" src="media/demo.gif" width="960" />
 </p>
 
 Screenshots and long "here's what I mean" descriptions are a lossy way to give an agent feedback on a UI. The thing a live app is best at - being live - gets thrown away the moment you have to describe it in words.
 
-**Reactive Editor** opens your project's own dev server (Vite, TanStack Start, Next.js, or Create React App - auto-detected, nothing to configure) behind a local reverse proxy, lets you click any element in the running app, and resolves that click to the exact source file and line before it ever reaches your agent. No screenshots, no "the button in the header, you know the one" - just click it and say what you want.
+**Reactive Editor** opens your project's own dev server (Vite, TanStack Start, Next.js, Create React App, plain Vite+Vue, or plain Vite+Svelte - auto-detected, nothing to configure) behind a local reverse proxy, lets you click any element in the running app, and resolves that click to the exact source location before it ever reaches your agent - down to the file and line where the framework's own dev tooling makes that possible. No screenshots, no "the button in the header, you know the one" - just click it and say what you want.
 
 - **Local-first** - A local CLI and a local browser tab, reverse-proxying your own dev server. No cloud dependency, no data leaving your machine.
-- **Zero-config detection** - Framework and React version are read straight from the project's own `package.json`/`node_modules` and shown right in the chrome shell - nothing to declare, nothing to get wrong.
-- **Real source, not a guess** - Every click resolves through the actual React Fiber tree to a real `{file, line, component}`, verified against React 16 through 19 across every supported framework, with an honest fallback (not a wrong answer) for the one case that's architecturally unresolvable today (Next.js App Router Server Components).
+- **Zero-config detection** - Framework and its installed version are read straight from the project's own `package.json`/`node_modules` and shown right in the chrome shell - nothing to declare, nothing to get wrong.
+- **Real source, not a guess** - Every click resolves through the framework's own runtime metadata to a real, verified target - `{file, line, component}` for React (Fiber tree, React 16 through 19) and Svelte (compiler-emitted location metadata), `{file, component}` for Vue (no per-element line metadata by default - see below) - with an honest fallback (not a wrong answer) wherever full precision genuinely isn't available yet.
 
 Reactive Editor is an [AXI](https://axi.md), which means -
 
@@ -39,15 +39,17 @@ Reactive Editor is an [AXI](https://axi.md), which means -
 
 ## Quick Start
 
-Install the Reactive Editor skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
+**Regardless of which install method you use below, always run this first:**
 
 ```sh
 npx skills add adeeshsharma/reactive-axi --skill reactive-editor
 ```
 
-The skill teaches your agent the full open → poll → apply → poll loop, including how to handle a click that couldn't be resolved to an exact source line. It documents `npx -y reactive-axi` as the invocation, so the CLI comes along on demand - no separate install step needed.
+This installs the Agent Skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills) - it's not an alternative to the CLI-install options in the next section, it's a separate, required step regardless of which of those you pick. It teaches your agent the full open → poll → apply → poll loop, the polling discipline (keep it running, never kill it, re-run if interrupted), and how to interpret every resolved target shape, including the honest fallbacks (`unresolved`/`lineUnresolved`) for the elements that can't be pinpointed exactly. **Without it, you have to know these exact CLI invocations and the poll rules yourself** - the "How the CLI Runs" section below only covers how the `reactive-axi` command gets invoked (on demand via npx, a global install, or from source), not how an agent should use it once invoked. Skipping this step means driving the raw CLI by hand with no guidance.
 
-Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
+By default the skill lands in the current project's skills directory (`.claude/skills/`, for example); add `-g` to install it for all projects (`~/.claude/skills/`).
+
+In agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
 
 ```
 /reactive-editor review the app in ./my-app
@@ -55,13 +57,13 @@ Then, in agents that expose skills as slash commands (Claude Code, for example),
 
 Or just ask your agent to open your app for review, and it loads the skill on its own when it recognizes the intent.
 
-By default the skill lands in the current project's skills directory (`.claude/skills/`, for example); add `-g` to install it for all projects (`~/.claude/skills/`).
+## How the CLI Runs
 
-## Other Ways to Use It
+The skill above already documents `npx -y reactive-axi` as its invocation by default - once it's installed, no separate CLI install step is needed. The options below are just different ways the underlying `reactive-axi` command itself can run; pick whichever fits, but **the skill install above is still required regardless of which one you pick** - none of these three teach an agent how to use the tool on their own.
 
-### Zero setup
+### Zero setup (what the skill already expects)
 
-Reactive Editor is an AXI, so any capable agent can run the CLI directly with nothing installed at all. Just tell your agent:
+Any capable agent can run the CLI directly with nothing installed at all - this is exactly what the skill documents and expects by default:
 
 ```
 Use `npx -y reactive-axi` to open my app at ./my-app for review.
@@ -69,21 +71,23 @@ Use `npx -y reactive-axi` to open my app at ./my-app for review.
 
 ### Install globally
 
+This installs the CLI only - it does not teach your agent how to use it. If you haven't already, go run the skill install command from Quick Start above; otherwise you'll be driving the raw CLI by hand with no guidance on the poll loop or how to read a resolved target.
+
 ```sh
 npm install -g reactive-axi
-reactive-axi <path-to-a-react-app>
+reactive-axi <path-to-your-app>
 ```
 
 ### Install from source
 
-For working on Reactive Editor itself, or running an unreleased change:
+For working on Reactive Editor itself, or running an unreleased change. This installs the CLI only, same caveat as above - also run the skill install command from Quick Start unless you're intentionally driving the CLI by hand.
 
 ```sh
 git clone https://github.com/adeeshsharma/reactive-axi.git
 cd reactive-axi
 pnpm install
 pnpm --filter reactive-axi run check
-node packages/reactive-axi/bin/reactive-axi.js <path-to-a-react-app>
+node packages/reactive-axi/bin/reactive-axi.js <path-to-your-app>
 ```
 
 ## How It Works
@@ -91,7 +95,7 @@ node packages/reactive-axi/bin/reactive-axi.js <path-to-a-react-app>
 ```
 ┌──────────────────────────┐
 │ reactive-axi <project>   │
-│ detects framework + React│
+│ detects framework +      │
 │ version, spawns the      │
 │ project's own dev server │
 └───────────┬───────────────┘
@@ -117,9 +121,12 @@ node packages/reactive-axi/bin/reactive-axi.js <path-to-a-react-app>
 └──────────────────────────┘
 ```
 
-- **Framework detection** - Reads the project's `package.json` in priority order (TanStack Start, Next.js, Create React App, then plain Vite) so a framework that also happens to use Vite under the hood, like TanStack Start, is never misclassified. The installed framework and React version (read from each package's own `node_modules/<name>/package.json`, not the semver range) are shown live in the chrome shell's topbar.
-- **Click-to-source resolution** - An external `window.__REACT_DEVTOOLS_GLOBAL_HOOK__` is installed before the app's own React bundle runs, then a clicked DOM node's fiber is read directly off its own expando property - no changes to your project required. React 16 through 18 read `fiber._debugSource` directly; React 19+ captures a real V8 stack trace (`_debugStack`) and resolves it against the dev server's own inline sourcemap. Verified against real pinned fixtures at React 16, 18, and 19 across every supported framework.
-- **Honest about what it can't resolve** - A Next.js App Router Server Component's click target resolves into React's own internal RSC-deserialization runtime, not your application code - confirmed empirically, not assumed, and true regardless of React version. Reactive Editor reports this plainly (`"unresolved": true` on the prompt's target) instead of returning a wrong or empty answer as if it were real data.
+- **Framework detection** - Reads the project's `package.json` in priority order (TanStack Start, Next.js, Create React App, Vue, Svelte, then plain Vite) so a framework that also happens to use Vite under the hood, like TanStack Start or plain Vite+Vue/Svelte, is never misclassified. The installed framework and its version (read from each package's own `node_modules/<name>/package.json`, not the semver range) are shown live in the chrome shell's topbar.
+- **Click-to-source resolution, per framework's own real capabilities:**
+  - **React** - An external `window.__REACT_DEVTOOLS_GLOBAL_HOOK__` is installed before the app's own React bundle runs, then a clicked DOM node's fiber is read directly off its own expando property - no changes to your project required. React 16 through 18 read `fiber._debugSource` directly; React 19+ captures a real V8 stack trace (`_debugStack`) and resolves it against the dev server's own inline sourcemap. Verified against real pinned fixtures at React 16, 18, and 19 across every supported framework.
+  - **Svelte** - The compiler attaches `__svelte_meta.loc = {file, line, column}` directly onto every DOM element in dev mode, genuinely zero-config. Svelte 4 reports 0-indexed lines, Svelte 5 reports 1-indexed - confirmed by a real spike, not assumed, and handled transparently.
+  - **Vue** - A clicked element's `__vueParentComponent` expando (attached by Vue's runtime in dev mode) resolves to a real component instance, giving a real file and component name via `@vitejs/plugin-vue`'s `__file` metadata - effectively zero-config, since that plugin is required for `.vue` files to work with Vite at all. No exact line/column yet: Vue templates don't carry per-element line metadata the way React's JSX or Svelte's compiler output does. The prompt's target reports `lineUnresolved: true` in this case rather than guessing a line.
+- **Honest about what it can't resolve** - A Next.js App Router Server Component's click target resolves into React's own internal RSC-deserialization runtime, not your application code - confirmed empirically, not assumed, and true regardless of React version. Reactive Editor reports this plainly (`"unresolved": true` on the prompt's target) instead of returning a wrong or empty answer as if it were real data. Vue targets missing a line number are reported the same honest way (`"lineUnresolved": true`), never a fabricated line.
 - **Annotate / Explore mode** - Toggle with `⌘I`/`Ctrl+I` or the topbar switch. Annotate mode intercepts every click for review; Explore mode passes clicks straight through so you can actually use your app while reviewing it - the mode is always visible (a colored border, a site-wide crosshair cursor, a badge on the app itself), since misjudging it in a live, stateful app has real consequences a static artifact never had.
 - **Queue, don't fire-and-forget** - Click an element, pick a kind (Change, Question, Comment, Bug), write a note, and it joins a visible queue - separate from what's already been sent - that you can edit or remove before sending as a batch.
 - **HMR survives the proxy** - Each session gets its own dynamically allocated port pair (the project's real dev server, plus a public reverse-proxy port), with the framework's HMR/Fast Refresh client explicitly reconnected through the proxy rather than the internal port it can't otherwise reach. A live source edit hot-reloads the already-open review page in place - verified with a real edit to a real file for every supported framework, not just a page reload check.
@@ -133,47 +140,49 @@ node packages/reactive-axi/bin/reactive-axi.js <path-to-a-react-app>
 
 ## CLI Reference
 
-| Command                       | Description                                                                                                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `reactive-axi <project-dir>`   | Open or resume a review session. Detects the framework and React version, spawns the project's own dev server, reverse-proxies it, and opens a browser.       |
+| Command                           | Description                                                                                                                                                     |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reactive-axi <project-dir>`      | Open or resume a review session. Detects the framework and its version, spawns the project's own dev server, reverse-proxies it, and opens a browser.           |
 | `reactive-axi poll <project-dir>` | Long-poll until the reviewer sends feedback or ends the session. Leave no-timeout polls running, or re-run them if interrupted - queued feedback is never lost. |
-| `reactive-axi end <project-dir>`  | End a session as the agent; unlike a user-initiated end from the browser, this still allows a plain reopen later.                                          |
-| `reactive-axi stop`            | Shut down the background server.                                                                                                                                |
-| `reactive-axi server`          | Run the local control server directly (used internally - normal use never needs this).                                                                         |
+| `reactive-axi end <project-dir>`  | End a session as the agent; unlike a user-initiated end from the browser, this still allows a plain reopen later.                                               |
+| `reactive-axi stop`               | Shut down the background server.                                                                                                                                |
+| `reactive-axi server`             | Run the local control server directly (used internally - normal use never needs this).                                                                          |
 
 ### Flags
 
-| Command                        | Flag                    | Description                                                                                       |
-| ------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
-| `reactive-axi <project-dir>`    | `--no-open`             | Ensure the server/session exists without opening another browser window.                             |
-| `reactive-axi <project-dir>`    | `--reopen`              | Reopen a session the reviewer explicitly ended from the browser; without it, a plain open refuses.   |
-| `reactive-axi poll`             | `--agent-reply "..."`   | Show the agent's reply in the existing browser chat and re-enable human sends before polling again.  |
-| `reactive-axi poll`             | `--timeout-ms <ms>`     | Test/debug escape hatch only; agents should normally omit it and leave the long poll running.        |
-| `reactive-axi stop` / `server`  | `--port <port>`         | Target a server running on a non-default port.                                                       |
-| `reactive-axi server`           | `--verbose`             | Log session and dev-server events to stderr; also enabled with `REACTIVE_AXI_DEBUG=1`.               |
+| Command                        | Flag                  | Description                                                                                         |
+| ------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------- |
+| `reactive-axi <project-dir>`   | `--no-open`           | Ensure the server/session exists without opening another browser window.                            |
+| `reactive-axi <project-dir>`   | `--reopen`            | Reopen a session the reviewer explicitly ended from the browser; without it, a plain open refuses.  |
+| `reactive-axi poll`            | `--agent-reply "..."` | Show the agent's reply in the existing browser chat and re-enable human sends before polling again. |
+| `reactive-axi poll`            | `--timeout-ms <ms>`   | Test/debug escape hatch only; agents should normally omit it and leave the long poll running.       |
+| `reactive-axi stop` / `server` | `--port <port>`       | Target a server running on a non-default port.                                                      |
+| `reactive-axi server`          | `--verbose`           | Log session and dev-server events to stderr; also enabled with `REACTIVE_AXI_DEBUG=1`.              |
 
 ### Environment variables
 
-| Variable                       | Default            | Purpose                                                                 |
-| -------------------------------- | ------------------- | -------------------------------------------------------------------------- |
-| `REACTIVE_AXI_PORT`             | `4388`              | Control server port.                                                       |
-| `REACTIVE_AXI_HOST`             | `127.0.0.1`         | Address the control server binds to.                                       |
-| `REACTIVE_AXI_LINK_HOST`        | bind address         | Hostname written into generated session links.                             |
-| `REACTIVE_AXI_ALLOWED_HOSTS`    | *(none)*            | Extra Host-header values to accept (whitespace-separated); `*` disables the check. |
-| `REACTIVE_AXI_STATE_DIR`        | `~/.reactive-axi`   | Where session state and logs are kept.                                     |
-| `REACTIVE_AXI_IDLE_TIMEOUT_MS`  | `1800000` (30 min)  | Self-shutdown after this long with no connections; `0`/`off` disables it.   |
-| `REACTIVE_AXI_NO_OPEN`          | *(unset)*           | Equivalent to `--no-open`.                                                  |
-| `REACTIVE_AXI_DEBUG`            | *(unset)*           | Equivalent to `--verbose` on `reactive-axi server`.                        |
+| Variable                       | Default            | Purpose                                                                            |
+| ------------------------------ | ------------------ | ---------------------------------------------------------------------------------- |
+| `REACTIVE_AXI_PORT`            | `4388`             | Control server port.                                                               |
+| `REACTIVE_AXI_HOST`            | `127.0.0.1`        | Address the control server binds to.                                               |
+| `REACTIVE_AXI_LINK_HOST`       | bind address       | Hostname written into generated session links.                                     |
+| `REACTIVE_AXI_ALLOWED_HOSTS`   | _(none)_           | Extra Host-header values to accept (whitespace-separated); `*` disables the check. |
+| `REACTIVE_AXI_STATE_DIR`       | `~/.reactive-axi`  | Where session state and logs are kept.                                             |
+| `REACTIVE_AXI_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Self-shutdown after this long with no connections; `0`/`off` disables it.          |
+| `REACTIVE_AXI_NO_OPEN`         | _(unset)_          | Equivalent to `--no-open`.                                                         |
+| `REACTIVE_AXI_DEBUG`           | _(unset)_          | Equivalent to `--verbose` on `reactive-axi server`.                                |
 
 ## Supported stacks
 
-| Framework | Detected via | React versions verified |
-| --- | --- | --- |
-| Vite + plain React | `vite` in `package.json` | 16, 18, 19 |
-| TanStack Start | `@tanstack/react-start` | 18, 19 |
-| Next.js (Pages Router) | `next` | 18, 19 |
-| Next.js (App Router) | `next` | 18, 19 (Server Components report `"unresolved": true` - see above) |
-| Create React App | `react-scripts` | whatever the installed `react-scripts` scaffolds (CRA itself is in maintenance mode upstream) |
+| Framework              | Detected via               | Versions verified                                                                             | Click-to-source precision                                                              |
+| ---------------------- | -------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Vite + plain React     | `vite` in `package.json`   | React 16, 18, 19                                                                              | Exact file + line + column                                                             |
+| TanStack Start         | `@tanstack/react-start`    | React 18, 19                                                                                  | Exact file + line + column                                                             |
+| Next.js (Pages Router) | `next`                     | React 18, 19                                                                                  | Exact file + line + column                                                             |
+| Next.js (App Router)   | `next`                     | React 18, 19                                                                                  | Exact file + line + column (Server Components report `"unresolved": true` - see above) |
+| Create React App       | `react-scripts`            | Whatever the installed `react-scripts` scaffolds (CRA itself is in maintenance mode upstream) | Exact file + line + column                                                             |
+| Vite + plain Vue       | `vue` in `package.json`    | Vue 3 (Vue 2 is EOL and out of scope)                                                         | File + component name only (reports `"lineUnresolved": true` - see above)              |
+| Vite + plain Svelte    | `svelte` in `package.json` | Svelte 4, 5                                                                                   | Exact file + line + column                                                             |
 
 ## Development
 

@@ -4,7 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { canonicalProjectRoot, normalizeReactComponentTarget, SessionStore, sessionKey } from "../src/session-store.js";
+import {
+  canonicalProjectRoot,
+  normalizeReactComponentTarget,
+  normalizeSvelteComponentTarget,
+  normalizeVueComponentTarget,
+  SessionStore,
+  sessionKey,
+} from "../src/session-store.js";
 
 async function withTempDir(fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "reactive-axi-test-"));
@@ -289,6 +296,94 @@ test("normalizeReactComponentTarget defaults invalid line/column to 0 and unknow
   assert.equal(normalized.lineNumber, 0);
   assert.equal(normalized.columnNumber, 0);
   assert.equal(normalized.resolution, "debugSource");
+});
+
+test("normalizeVueComponentTarget strips unknown fields and sets lineUnresolved:true when there's no line", () => {
+  const normalized = normalizeVueComponentTarget({
+    type: "vue-component",
+    fileName: "/repo/src/components/HelloWorld.vue",
+    componentName: "HelloWorld",
+    selector: "button",
+    route: "/",
+    lineNumber: null,
+    __proto__: { polluted: true },
+    extra: "should be dropped",
+  });
+  assert.deepEqual(normalized, {
+    type: "vue-component",
+    fileName: "/repo/src/components/HelloWorld.vue",
+    lineNumber: 0,
+    columnNumber: 0,
+    componentName: "HelloWorld",
+    selector: "button",
+    route: "/",
+    lineUnresolved: true,
+  });
+});
+
+test("normalizeVueComponentTarget omits lineUnresolved when a real line is present (e.g. once vite-plugin-vue-inspector is detected in future work)", () => {
+  const normalized = normalizeVueComponentTarget({ fileName: "App.vue", lineNumber: 12, componentName: "App" });
+  assert.equal("lineUnresolved" in normalized, false);
+  assert.equal(normalized.lineNumber, 12);
+});
+
+test("normalizeSvelteComponentTarget strips unknown fields to a fixed shape, no componentName/unresolved fields at all", () => {
+  const normalized = normalizeSvelteComponentTarget({
+    type: "svelte-component",
+    fileName: "src/lib/Counter.svelte",
+    lineNumber: 5,
+    columnNumber: 0,
+    selector: "button.counter",
+    route: "/",
+    __proto__: { polluted: true },
+    extra: "should be dropped",
+  });
+  assert.deepEqual(normalized, {
+    type: "svelte-component",
+    fileName: "src/lib/Counter.svelte",
+    lineNumber: 5,
+    columnNumber: 0,
+    selector: "button.counter",
+    route: "/",
+  });
+});
+
+test("queuePrompts normalizes a vue-component target through the same path", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const session = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const updated = await store.queuePrompts(session.key, {
+      prompts: [
+        {
+          prompt: "make bigger",
+          tag: "message",
+          target: { type: "vue-component", fileName: "HelloWorld.vue", componentName: "HelloWorld", lineNumber: null },
+        },
+      ],
+    });
+    assert.equal(updated.prompts[0].target.type, "vue-component");
+    assert.equal(updated.prompts[0].target.fileName, "HelloWorld.vue");
+    assert.equal(updated.prompts[0].target.lineUnresolved, true);
+  });
+});
+
+test("queuePrompts normalizes a svelte-component target through the same path", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const session = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const updated = await store.queuePrompts(session.key, {
+      prompts: [
+        {
+          prompt: "make bigger",
+          tag: "message",
+          target: { type: "svelte-component", fileName: "Counter.svelte", lineNumber: 5, columnNumber: 0 },
+        },
+      ],
+    });
+    assert.equal(updated.prompts[0].target.type, "svelte-component");
+    assert.equal(updated.prompts[0].target.fileName, "Counter.svelte");
+    assert.equal(updated.prompts[0].target.lineNumber, 5);
+  });
 });
 
 test("queuePrompts normalizes a react-component target through the same path", async () => {

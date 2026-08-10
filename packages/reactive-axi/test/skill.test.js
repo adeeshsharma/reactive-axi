@@ -27,7 +27,7 @@ test("createSkillMarkdown emits Hermes Agent metadata as string-valued frontmatt
 
   assert.deepEqual(frontmatter.metadata, {
     "argument-hint": "<project directory to review>",
-    "hermes-tags": "react, devtools, live-preview, review, collaboration",
+    "hermes-tags": "react, vue, svelte, devtools, live-preview, review, collaboration",
     "hermes-category": "productivity",
   });
   assert.equal(frontmatter.version, undefined, "version is omitted to avoid release churn");
@@ -115,11 +115,21 @@ test("createSkillMarkdown explains the unresolved-target fallback for Next.js Ap
   assert.match(md, /selector.*route/i);
 });
 
-test("createSkillMarkdown mentions automatic framework and React-version detection", () => {
+test("createSkillMarkdown explains the lineUnresolved fallback for Vue targets (real fileName, no exact line)", () => {
+  const md = createSkillMarkdown();
+  assert.match(md, /"lineUnresolved":\s*true/);
+  assert.match(md, /Vue/);
+  assert.match(md, /fileName.*componentName/);
+});
+
+test("createSkillMarkdown mentions automatic framework and installed-version detection, across React, Vue, and Svelte", () => {
   const md = createSkillMarkdown();
   assert.match(md, /auto-detects the framework/i);
-  assert.match(md, /Vite, TanStack Start, Next\.js Pages\/App Router, or Create React App/);
-  assert.match(md, /React version/i);
+  assert.match(
+    md,
+    /Vite, TanStack Start, Next\.js Pages\/App Router, Create React App, plain Vite\+Vue, or plain Vite\+Svelte/,
+  );
+  assert.match(md, /framework version/i);
 });
 
 test("createSkillMarkdown does not leak live session state", () => {

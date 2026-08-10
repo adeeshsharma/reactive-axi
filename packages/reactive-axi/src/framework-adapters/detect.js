@@ -9,10 +9,20 @@ import path from "node:path";
 // all (confirmed against the bootstrapped fixtures), so they were never actually at risk of
 // this particular collision - but the ordering principle is what keeps the detector safe to
 // extend further later, not luck.
+//
+// vue/svelte are checked before the generic vite fallback for the same reason: a plain
+// Vite+Vue or Vite+Svelte project also carries a real `vite` devDependency (confirmed against
+// the bootstrapped fixtures/vue-3, fixtures/svelte-4, fixtures/svelte-5), and would otherwise
+// be misclassified the same way TanStack Start would be. They're a different axis from
+// react/next/cra/tanstack-start entirely (a different rendering runtime, not just a
+// different React-based transport) - see memory-bank/vue-svelte-plan.md for the click-to-
+// source resolution differences this drives in vue-inspector.js/svelte-inspector.js.
 const DETECTORS = [
   { framework: "tanstack-start", depName: "@tanstack/react-start" },
   { framework: "next", depName: "next" },
   { framework: "cra", depName: "react-scripts" },
+  { framework: "vue", depName: "vue" },
+  { framework: "svelte", depName: "svelte" },
   { framework: "vite", depName: "vite" },
 ];
 
@@ -39,6 +49,8 @@ const FRAMEWORK_LABELS = {
   "tanstack-start": "TanStack Start",
   next: "Next.js",
   cra: "Create React App",
+  vue: "Vue",
+  svelte: "Svelte",
 };
 
 // The *installed*, resolved version (read from the package's own node_modules/.../package.json),
@@ -56,10 +68,15 @@ async function readInstalledVersion(projectRoot, packageName) {
 
 /**
  * Resolves the human-facing label and real installed versions for an already-detected
- * framework, plus the installed React version (relevant regardless of framework - it's the
- * other half of "what the user is currently working with"). Never throws - a version that
- * can't be read is reported as `null` rather than losing the rest of the session's info over
- * an unusual install layout.
+ * framework, plus the installed React version where relevant. For a React-based framework,
+ * frameworkVersion is the build tool/meta-framework's own version (Vite/Next.js/CRA/TanStack
+ * Start) and reactVersion is the separate runtime version - shown as two label segments
+ * ("Vite 8.2.1 · React 18.3.1"). For vue/svelte, `depName` already points at the runtime
+ * package itself, so frameworkVersion IS the runtime version and reactVersion correctly
+ * resolves to null (no react package installed) - formatStackLabel (server.js) already
+ * degrades gracefully and omits an absent segment rather than showing a stray "· React". Never
+ * throws - a version that can't be read is reported as `null` rather than losing the rest of
+ * the session's info over an unusual install layout.
  * @param {string} projectRoot
  * @param {string | null} framework
  * @returns {Promise<{ frameworkLabel: string | null, frameworkVersion: string | null, reactVersion: string | null }>}

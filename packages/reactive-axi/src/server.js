@@ -30,6 +30,20 @@ import {
   resolveReactComponentTarget,
 } from "./react-fiber-inspector.js";
 import { canonicalProjectRoot, SessionStore, sessionKey } from "./session-store.js";
+import {
+  buildSelector as buildSelectorSvelte,
+  getSvelteMetaForNode,
+  rectToPlainObject as rectToPlainObjectSvelte,
+  resolveClickTarget as resolveClickTargetSvelte,
+} from "./svelte-inspector.js";
+import {
+  buildSelector as buildSelectorVue,
+  componentNameForVueInstance,
+  getVueInstanceForNode,
+  rectToPlainObject as rectToPlainObjectVue,
+  resolveClickTarget as resolveClickTargetVue,
+  sourceFileForVueInstance,
+} from "./vue-inspector.js";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60_000;
 
@@ -325,7 +339,7 @@ export async function serve({
         res.status(404).send("Session not found");
         return;
       }
-      res.type("application/javascript").send(createSdkJs(key));
+      res.type("application/javascript").send(createSdkJs(key, session));
     } catch (error) {
       next(error);
     }
@@ -762,15 +776,42 @@ function formatStackLabel(session) {
   return parts.join(" \u00b7 ");
 }
 
-// The injected SDK: real, separately-unit-tested Node functions from react-fiber-inspector.js
-// are serialized via fn.toString() into a self-executing script, so the browser runs
-// byte-identical logic to what test/react-fiber-inspector.test.js verifies against mocked
-// objects and the real fixture app. Only browser-safe exports (no @jridgewell/trace-mapping,
-// no `fetch`-based server resolution) are included here - see react-fiber-inspector.js's own
-// module-level comment for why the split exists.
-export function createSdkJs(key) {
-  return `(() => {
-const key = ${JSON.stringify(key)};
+// Which framework-specific inspector module's functions to serialize into the SDK, keyed by
+// the same `framework` id detect.js produces. Every branch must declare a same-named
+// `resolveClickTarget` (plus whatever it depends on) - the click handler below calls it by
+// that one name regardless of which branch supplied it, so the shared event-wiring code below
+// never needs to know which framework it's running against. vue/svelte's DOM-only resolvers
+// don't need an install step (no `installReactDevtoolsHook()` equivalent - see
+// vue-inspector.js/svelte-inspector.js's own module comments for why), so that call is
+// react-only, guarded by the same branch.
+function inspectorScriptFor(framework, frameworkVersion) {
+  if (framework === "vue") {
+    return `
+const getVueInstanceForNode = ${getVueInstanceForNode.toString()};
+const componentNameForVueInstance = ${componentNameForVueInstance.toString()};
+const sourceFileForVueInstance = ${sourceFileForVueInstance.toString()};
+const buildSelector = ${buildSelectorVue.toString()};
+const rectToPlainObject = ${rectToPlainObjectVue.toString()};
+const resolveClickTarget = ${resolveClickTargetVue.toString()};
+`;
+  }
+  if (framework === "svelte") {
+    // Confirmed by a real spike (memory-bank/vue-svelte-plan.md), not assumed: Svelte 4's
+    // __svelte_meta.loc is 0-indexed, Svelte 5's is 1-indexed. Baked in here as a literal at
+    // SDK-composition time, since the detected Svelte major version is already known
+    // server-side - no need for the browser to guess or detect its own Svelte version.
+    const svelteMajor = parseInt(String(frameworkVersion || ""), 10);
+    const zeroIndexedLines = svelteMajor === 4;
+    return `
+const getSvelteMetaForNode = ${getSvelteMetaForNode.toString()};
+const buildSelector = ${buildSelectorSvelte.toString()};
+const rectToPlainObject = ${rectToPlainObjectSvelte.toString()};
+const resolveClickTargetImpl = ${resolveClickTargetSvelte.toString()};
+const resolveClickTarget = (x, y) => resolveClickTargetImpl(x, y, document, ${JSON.stringify(zeroIndexedLines)});
+`;
+  }
+  // Default: every React-based framework (Vite/Next.js/CRA/TanStack Start).
+  return `
 const REACT_DEVTOOLS_HOOK_MARKER = ${JSON.stringify(REACT_DEVTOOLS_HOOK_MARKER)};
 const installReactDevtoolsHook = ${installReactDevtoolsHook.toString()};
 const getFiberForNode = ${getFiberForNode.toString()};
@@ -779,8 +820,22 @@ const parseCallSiteFrame = ${parseCallSiteFrame.toString()};
 const buildSelector = ${buildSelector.toString()};
 const rectToPlainObject = ${rectToPlainObject.toString()};
 const resolveClickTarget = ${resolveClickTarget.toString()};
-
 installReactDevtoolsHook();
+`;
+}
+
+// The injected SDK: real, separately-unit-tested Node functions from react-fiber-inspector.js
+// / vue-inspector.js / svelte-inspector.js are serialized via fn.toString() into a
+// self-executing script, so the browser runs byte-identical logic to what each module's own
+// test file verifies against mocked objects and the real fixture apps. Only browser-safe
+// exports (no @jridgewell/trace-mapping, no `fetch`-based server resolution) are included
+// here - see react-fiber-inspector.js's own module-level comment for why that split exists.
+// `session` only needs `framework`/`framework_version` - passed as the whole session object
+// since that's what the /sdk.js route already has on hand.
+export function createSdkJs(key, session = {}) {
+  return `(() => {
+const key = ${JSON.stringify(key)};
+${inspectorScriptFor(session.framework, session.framework_version)}
 
 // Binary by design: annotate mode intercepts every click for review; explore mode is your
 // app, completely unmodified, so you can actually navigate and interact with it. No partial

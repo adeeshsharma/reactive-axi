@@ -15,9 +15,10 @@ const COMMANDS = new Set(["open", "poll", "end", "stop", "server"]);
 const RESERVED = new Set(RESERVED_COMMANDS);
 
 const DESCRIPTION =
-  "Reactive-Axi lets a human annotate a live, running React app (Vite, Next.js, Create React App, or TanStack Start) " +
-  "directly in the browser and send feedback to a coding agent, with every click resolved to the exact source file " +
-  "and line. Run `reactive-axi <project-dir>` to open a review session, then `reactive-axi poll <project-dir>` to wait for feedback.";
+  "Reactive-Axi lets a human annotate a live, running React, Vue, or Svelte app (Vite, Next.js, Create React App, " +
+  "TanStack Start, or plain Vite+Vue/Svelte) directly in the browser and send feedback to a coding agent, with every " +
+  "click resolved to the exact source file and line where the framework's own dev tooling makes that possible. Run " +
+  "`reactive-axi <project-dir>` to open a review session, then `reactive-axi poll <project-dir>` to wait for feedback.";
 
 export const POLL_WAKE_PATH_RULES = Object.freeze([
   "Keep the poll in the foreground by default and let it return the feedback directly to the agent.",
@@ -83,11 +84,11 @@ export function createHomeOutput({ bin, sessions, includeSessions = true }) {
         }
       : {}),
     help: [
-      "Run `reactive-axi <project-dir>` to open or resume a review session for a live React dev server. It auto-detects the framework (Vite, TanStack Start, Next.js Pages/App Router, or Create React App) and the installed React version, spawns the project's own dev server, and opens a browser to review it.",
+      "Run `reactive-axi <project-dir>` to open or resume a review session for a live dev server. It auto-detects the framework (Vite, TanStack Start, Next.js Pages/App Router, Create React App, plain Vite+Vue, or plain Vite+Svelte) and the installed framework version, spawns the project's own dev server, and opens a browser to review it.",
       `Run \`reactive-axi poll <project-dir>\` to wait for user feedback. It long-polls and stays silent until the user sends feedback or ends the session, so leave it running - never kill it. ${POLL_WAKE_PATH_RULES.join(" ")}`,
       "Run `reactive-axi end <project-dir>` to end a session as the agent.",
       "Run `reactive-axi stop` to shut down the background server (it also self-stops when idle).",
-      "Use reactive-axi when the user wants to give visual feedback on a live React app they are actively developing with an agent.",
+      "Use reactive-axi when the user wants to give visual feedback on a live React, Vue, or Svelte app they are actively developing with an agent.",
     ],
   };
 }
@@ -255,7 +256,7 @@ function createFeedbackNextStep(projectDir, sessionEnded, endedBy) {
     }
     return `This was the last feedback before the Reactive-Axi session ended. Stop polling ${projectDir}.`;
   }
-  return `Apply the requested change to the actual source file (the prompt's target includes the resolved fileName/lineNumber when available). If a prompt's target has "unresolved": true, reactive-axi could not find an exact source location for that element - typically a Next.js App Router Server Component, whose click target resolves into React's own internal runtime rather than application code. Use the target's selector and route, and the prompt text itself, to find the right file instead of expecting a fileName/lineNumber. The change will hot-reload live in the reviewer's browser automatically - you do not need to do anything else to show it. Do not respond to the user just yet. Now you must run \`reactive-axi poll ${projectDir} --agent-reply "<message for the user>"\`. ${POLL_WAKE_PATH_RULES.join(" ")}`;
+  return `Apply the requested change to the actual source file (the prompt's target includes the resolved fileName/lineNumber when available). If a prompt's target has "unresolved": true, reactive-axi could not find an exact source location for that element - typically a Next.js App Router Server Component, whose click target resolves into React's own internal runtime rather than application code. If a prompt's target has "lineUnresolved": true (Vue only), the fileName and componentName are real and resolved, but there's no exact line - Vue's template compiler doesn't emit per-element line metadata by default, so use the fileName and componentName to find the right spot in that file. Either way, use the target's selector and route, and the prompt text itself, to fill in what the fileName/lineNumber can't tell you. The change will hot-reload live in the reviewer's browser automatically - you do not need to do anything else to show it. Do not respond to the user just yet. Now you must run \`reactive-axi poll ${projectDir} --agent-reply "<message for the user>"\`. ${POLL_WAKE_PATH_RULES.join(" ")}`;
 }
 
 function createEndedNextStep(projectDir, endedBy) {
@@ -326,13 +327,15 @@ async function assertDirectory(dir) {
     const stats = await stat(dir);
     if (!stats.isDirectory()) throw new Error("not a directory");
   } catch {
-    throw new AxiError(`Not a directory: ${dir}`, "NOT_FOUND", ["Pass the path to a React project directory"]);
+    throw new AxiError(`Not a directory: ${dir}`, "NOT_FOUND", [
+      "Pass the path to a React, Vue, or Svelte project directory",
+    ]);
   }
   try {
     await access(path.join(dir, "package.json"));
   } catch {
     throw new AxiError(`No package.json found in ${dir}`, "VALIDATION_ERROR", [
-      "Run `reactive-axi <project-dir>` against a real Node/React project directory",
+      "Run `reactive-axi <project-dir>` against a real Node project directory (React, Vue, or Svelte)",
     ]);
   }
 }
@@ -591,12 +594,12 @@ export function getCommandHelp(command) {
 }
 
 function createTopLevelHelp() {
-  return `reactive-axi - live React app review AXI\n\nUsage:\n  reactive-axi\n  reactive-axi <project-dir> [--no-open] [--reopen]\n  reactive-axi poll <project-dir> [--agent-reply "..."]\n  reactive-axi end <project-dir>\n  reactive-axi stop\n\nSupports Vite, TanStack Start, Next.js (Pages and App Router), and Create React App - auto-detected from the project's package.json.\n\nNote: poll long-polls indefinitely by default until the user sends feedback or ends the session, staying silent while it waits - never kill it. ${POLL_WAKE_PATH_RULES.join(" ")}\n`;
+  return `reactive-axi - live app review AXI\n\nUsage:\n  reactive-axi\n  reactive-axi <project-dir> [--no-open] [--reopen]\n  reactive-axi poll <project-dir> [--agent-reply "..."]\n  reactive-axi end <project-dir>\n  reactive-axi stop\n\nSupports Vite, TanStack Start, Next.js (Pages and App Router), and Create React App for React; plain Vite+Vue and plain Vite+Svelte for Vue/Svelte - auto-detected from the project's package.json. Click-to-source precision varies by framework (see the Vue/Svelte note under \`reactive-axi <project-dir>\` help) - not every framework can resolve an exact line the way React does.\n\nNote: poll long-polls indefinitely by default until the user sends feedback or ends the session, staying silent while it waits - never kill it. ${POLL_WAKE_PATH_RULES.join(" ")}\n`;
 }
 
 function createCommandHelp() {
   return {
-    open: `Usage: reactive-axi <project-dir> [--no-open] [--reopen]\n\nOpen or resume a review session for a live React dev server. Auto-detects the framework (Vite, TanStack Start, Next.js Pages/App Router, or Create React App) and React version from the project's package.json, spawns the project's own dev server, reverse-proxies it with the review SDK injected, and opens a browser. If the user explicitly ended the session from the browser, this refuses to reopen it - pass --reopen to force it.\n`,
+    open: `Usage: reactive-axi <project-dir> [--no-open] [--reopen]\n\nOpen or resume a review session for a live dev server. Auto-detects the framework (Vite, TanStack Start, Next.js Pages/App Router, Create React App, plain Vite+Vue, or plain Vite+Svelte) and installed framework version from the project's package.json, spawns the project's own dev server, reverse-proxies it with the review SDK injected, and opens a browser. If the user explicitly ended the session from the browser, this refuses to reopen it - pass --reopen to force it.\n\nClick-to-source precision differs by framework: React resolves an exact file+line for every supported version. Svelte resolves an exact file+line too, genuinely zero-config. Vue currently resolves the file and component name but not an exact line (the target's lineNumber will be 0 with lineUnresolved: true) - Vue's own line-level tooling (vite-plugin-vue-inspector) is an opt-in the target project would need to add, not something reactive-axi can assume is present.\n`,
     poll: `Usage: reactive-axi poll <project-dir> [--agent-reply "..."]\n\nLong-polls indefinitely for queued user prompts. Stays silent while waiting - never kill it. ${POLL_WAKE_PATH_RULES.join(" ")} Use --agent-reply after applying prior feedback.\n`,
     end: `Usage: reactive-axi end <project-dir>\n\nEnd a session as the agent.\n`,
     stop: `Usage: reactive-axi stop [--port <port>]\n\nShut down the background Reactive-Axi server.\n`,

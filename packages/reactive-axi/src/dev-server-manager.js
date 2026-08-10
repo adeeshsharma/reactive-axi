@@ -24,6 +24,14 @@ const ADAPTERS = {
   "tanstack-start": spawnViteDevServer,
   next: spawnNextDevServer,
   cra: spawnCraDevServer,
+  // Plain Vite+Vue and plain Vite+Svelte (fixtures/vue-3, fixtures/svelte-4, fixtures/svelte-5)
+  // are both real Vite dev servers underneath too - spawnViteDevServer has no React-specific
+  // assumptions anywhere (confirmed by reading it: it only runs `vite --config <wrapper>`), so
+  // it's the transport for these exactly like it is for TanStack Start. What differs per
+  // framework is click-to-source *resolution*, not transport - see
+  // memory-bank/vue-svelte-plan.md and server.js's createSdkJs.
+  vue: spawnViteDevServer,
+  svelte: spawnViteDevServer,
 };
 
 /** @returns {Promise<void>} */
