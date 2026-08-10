@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.2...reactive-axi-v0.0.3) (2026-08-10)
+
+
+### Bug Fixes
+
+* correct release-please output keys and clean up public docs ([56b87f2](https://github.com/adeeshsharma/reactive-axi/commit/56b87f2c78bb2f92f19bbc23e91ae4615ec60398))
+
 ## [0.0.2](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.1...reactive-axi-v0.0.2) (2026-08-10)
 
 
