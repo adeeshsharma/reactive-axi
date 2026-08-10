@@ -1,6 +1,6 @@
 {
   "name": "reactive-axi",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Click any element in your live React app and send feedback straight to your coding agent, resolved to the exact source file and line.",
   "type": "module",
   "homepage": "https://github.com/adeeshsharma/reactive-axi#readme",
