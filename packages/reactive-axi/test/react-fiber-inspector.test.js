@@ -228,9 +228,9 @@ test("resolveOriginalPosition and resolveReactComponentTarget resolve against a 
     const transformedUrl = `http://127.0.0.1:${internalPort}/src/App.jsx`;
 
     // Real coordinates re-verified against this exact fixture after the "About Reactive-Axi"
-    // section and the HMR-note paragraph were added to App.jsx during real dogfooding (see
-    // memory-bank/progress.md) - the button's JSX call site transforms to 91:21 and resolves
-    // back to App.jsx:29:8 now, not the original 80:21 -> 24:8 from before those edits.
+    // section and the HMR-note paragraph were added to App.jsx during real dogfooding - the
+    // button's JSX call site transforms to 91:21 and resolves back to App.jsx:29:8 now, not
+    // the original 80:21 -> 24:8 from before those edits.
     const original = await resolveOriginalPosition({ transformedUrl, transformedLine: 91, transformedColumn: 21 });
     assert.ok(original.source.endsWith("App.jsx"));
     assert.equal(original.line, 29);

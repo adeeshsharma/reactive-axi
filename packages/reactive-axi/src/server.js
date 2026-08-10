@@ -64,8 +64,8 @@ export async function serve({
   // its own domain to 127.0.0.1, since the rebound page sends its hostile domain in both
   // Origin and Host. Only a Host-header allowlist does. This is a real, load-bearing risk
   // here: the per-session proxy port doesn't just serve one HTML file, it re-exposes a live
-  // dev server's full uncompiled source tree - a materially larger surface (see
-  // memory-bank/techContext.md).
+  // dev server's full uncompiled source tree - a materially larger surface than a single
+  // static artifact would be.
   const allowedHostnames = buildAllowedHostnames({ host, linkHost: linkHostName, allowedHosts });
   if (!allowsAllHosts(allowedHosts)) {
     app.use((req, res, next) => {
@@ -120,8 +120,7 @@ export async function serve({
   // Idempotent: if a dev server + proxy are already running and healthy for this session,
   // reuse them. Otherwise (first open, or a respawn after a control-server restart killed
   // the previous child) spawn fresh and record the new port allocation - the "is it still
-  // alive" resumability check for a live child process instead of a static file (see
-  // memory-bank's noted session-liveness risk).
+  // alive" resumability check a live child process needs that a static file never did.
   async function ensureSessionRuntime(key, projectRoot) {
     if (devServers.isAlive(key) && proxies.has(key)) return;
     if (proxies.has(key)) {

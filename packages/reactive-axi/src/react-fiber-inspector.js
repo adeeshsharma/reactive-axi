@@ -1,9 +1,9 @@
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 
-// Click-to-source resolution, proven in Phase 0 Spike B (see memory-bank/techContext.md for
-// the full empirical trail - the first attempt, based on click-to-react-component's
-// _debugSource + renderer.findFiberByHostInstance technique, failed completely against
-// React 19; this is the corrected, verified-exact-line-match implementation).
+// Click-to-source resolution, proven in Phase 0 Spike B - the first attempt, based on
+// click-to-react-component's _debugSource + renderer.findFiberByHostInstance technique,
+// failed completely against React 19; this is the corrected, verified-exact-line-match
+// implementation.
 //
 // Split in two halves for a real, load-bearing reason (not just organization):
 //   1. Browser-shippable pure functions below - hook install, DOM->fiber lookup, and stack-
@@ -236,7 +236,7 @@ export async function resolveOriginalPosition({
  * fetch itself succeeds, but the captured stack frame points into a compiled *React runtime*
  * chunk (`react-server-dom-turbopack`, the RSC payload deserializer), not the user's own
  * route file - that chunk genuinely ships no inline sourcemap at all, confirmed by direct
- * inspection, not assumed. This is the plan's anticipated "Server Components may have no
+ * inspection, not assumed. This is the anticipated "Server Components may have no
  * client-Fiber presence" risk, just manifesting one level down: a fiber *is* found (so
  * resolveClickTarget doesn't error), but what it points to is React's own deserialization
  * code, not application source. `unresolved: true` lets the prompt output tell the agent the
