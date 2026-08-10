@@ -18,30 +18,34 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # release-please-config.json's package path is "packages/reactive-axi", not ".", so
+      # in manifest mode every output is prefixed with that path - a bare `release_created`
+      # is always empty/false here. Bracket notation is required because of the `/`.
+      # https://github.com/googleapis/release-please-action#outputs
       - uses: actions/checkout@v6
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
         with:
-          ref: ${{ steps.release.outputs.tag_name }}
+          ref: ${{ steps.release.outputs['packages/reactive-axi--tag_name'] }}
 
       - uses: pnpm/action-setup@v4
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
 
       - uses: actions/setup-node@v6
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
 
       # Same recipe CI already runs on every PR - build, lint, format check, typecheck,
       # tests, and skill/plugin generated-file checks - so a release can never publish
       # something that wouldn't have passed the normal PR gate.
       - run: pnpm --filter reactive-axi run check
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
 
       - run: npm publish --access public --provenance
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/reactive-axi--release_created'] }}
         working-directory: packages/reactive-axi

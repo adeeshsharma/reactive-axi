@@ -23,9 +23,6 @@
   <img alt="Reactive Editor demo: clicking the counter button, queuing feedback, sending it, and watching the live app hot-reload with the fix applied" src="media/demo.gif" width="960" />
 </p>
 
-> [!NOTE]
-> **Not yet published to npm.** The badges above are the intended end state; until the first release ships, use [Install from source](#install-from-source) below. Everything else in this README describes real, already-working behavior, verified end-to-end against real dev servers - not aspirational.
-
 Screenshots and long "here's what I mean" descriptions are a lossy way to give an agent feedback on a UI. The thing a live app is best at - being live - gets thrown away the moment you have to describe it in words.
 
 **Reactive Editor** opens your project's own dev server (Vite, TanStack Start, Next.js, or Create React App - auto-detected, nothing to configure) behind a local reverse proxy, lets you click any element in the running app, and resolves that click to the exact source file and line before it ever reaches your agent. No screenshots, no "the button in the header, you know the one" - just click it and say what you want.
@@ -48,7 +45,7 @@ Install the Reactive Editor skill in the [Agent Skills](https://agentskills.io) 
 npx skills add adeeshsharma/reactive-axi --skill reactive-editor
 ```
 
-The skill teaches your agent the full open → poll → apply → poll loop, including how to handle a click that couldn't be resolved to an exact source line. It documents `npx -y reactive-axi` as the invocation, so the CLI comes along on demand once the package is published (see the note above for right now).
+The skill teaches your agent the full open → poll → apply → poll loop, including how to handle a click that couldn't be resolved to an exact source line. It documents `npx -y reactive-axi` as the invocation, so the CLI comes along on demand - no separate install step needed.
 
 Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
 
@@ -64,15 +61,22 @@ By default the skill lands in the current project's skills directory (`.claude/s
 
 ### Zero setup
 
-Reactive Editor is an AXI, so any capable agent can run the CLI directly with nothing installed at all. Once published, just tell your agent:
+Reactive Editor is an AXI, so any capable agent can run the CLI directly with nothing installed at all. Just tell your agent:
 
 ```
 Use `npx -y reactive-axi` to open my app at ./my-app for review.
 ```
 
+### Install globally
+
+```sh
+npm install -g reactive-axi
+reactive-axi <path-to-a-react-app>
+```
+
 ### Install from source
 
-The package isn't on npm yet - this is the path that works today:
+For working on Reactive Editor itself, or running an unreleased change:
 
 ```sh
 git clone https://github.com/adeeshsharma/reactive-axi.git
