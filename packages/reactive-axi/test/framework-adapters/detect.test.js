@@ -57,6 +57,20 @@ test("detectFramework returns 'tanstack-start' when @tanstack/react-start is a d
   });
 });
 
+test("detectFramework returns 'vue' when vue is a dependency, even though vite is also present", async () => {
+  // Same collision class as TanStack Start: a plain Vite+Vue project's package.json also
+  // carries a real vite devDependency (confirmed against the bootstrapped fixtures/vue-3).
+  await withPackageJson({ vue: "^3.5.0", vite: "^8.0.0" }, async (dir) => {
+    assert.equal(await detectFramework(dir), "vue");
+  });
+});
+
+test("detectFramework returns 'svelte' when svelte is a dependency, even though vite is also present", async () => {
+  await withPackageJson({ svelte: "^5.0.0", vite: "^8.0.0" }, async (dir) => {
+    assert.equal(await detectFramework(dir), "svelte");
+  });
+});
+
 test("detectFramework returns null when no package.json or no recognized dependency", async () => {
   await withTempDir(async (dir) => {
     assert.equal(await detectFramework(dir), null);
@@ -93,6 +107,22 @@ test("detectStackVersions degrades to null fields it can't read, without throwin
     // Neither vite's nor react's node_modules entry exists in this temp dir.
     const result = await detectStackVersions(dir, "vite");
     assert.deepEqual(result, { frameworkLabel: "Vite", frameworkVersion: null, reactVersion: null });
+  });
+});
+
+test("detectStackVersions for a Vue project reports the Vue version as frameworkVersion and no reactVersion", async () => {
+  await withTempDir(async (dir) => {
+    await writeInstalledPackage(dir, "vue", "3.5.41");
+    const result = await detectStackVersions(dir, "vue");
+    assert.deepEqual(result, { frameworkLabel: "Vue", frameworkVersion: "3.5.41", reactVersion: null });
+  });
+});
+
+test("detectStackVersions for a Svelte project reports the Svelte version as frameworkVersion and no reactVersion", async () => {
+  await withTempDir(async (dir) => {
+    await writeInstalledPackage(dir, "svelte", "4.2.20");
+    const result = await detectStackVersions(dir, "svelte");
+    assert.deepEqual(result, { frameworkLabel: "Svelte", frameworkVersion: "4.2.20", reactVersion: null });
   });
 });
 

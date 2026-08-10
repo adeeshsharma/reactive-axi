@@ -4,9 +4,10 @@ import { createHomeOutput, POLL_WAKE_PATH_RULES } from "./cli.js";
 // Kept outcome-focused so it fires on "review a live app" / "give visual feedback" intents,
 // not just a literal mention of the tool's name.
 export const SKILL_DESCRIPTION =
-  "Let a user click any element in their live, running React app (Vite, TanStack Start, Next.js, or " +
-  "Create React App) and send feedback straight to you, with every click resolved to the exact source " +
-  "file and line - no screenshots or descriptions needed. Use when the user asks to review a React app " +
+  "Let a user click any element in their live, running React, Vue, or Svelte app (Vite, TanStack Start, " +
+  "Next.js, Create React App, or plain Vite+Vue/Svelte) and send feedback straight to you, with every click " +
+  "resolved to the exact source file and line where the framework's own dev tooling makes that possible - " +
+  "no screenshots or descriptions needed. Use when the user asks to review a React, Vue, or Svelte app " +
   "they're developing, wants to give visual feedback on a live UI, or asks to set up or start Reactive Editor.";
 
 function bullets(items) {
@@ -48,7 +49,7 @@ description: ${SKILL_DESCRIPTION}
 license: MIT
 metadata:
   argument-hint: <project directory to review>
-  hermes-tags: react, devtools, live-preview, review, collaboration
+  hermes-tags: react, vue, svelte, devtools, live-preview, review, collaboration
   hermes-category: productivity
 ---
 
@@ -65,7 +66,7 @@ In restricted subprocess sandboxes, CI, or agent harnesses where \`npx -y\` exit
 $ARGUMENTS
 
 If the request above names a project directory, open a review session for that project now, following the workflow below.
-If it is empty, infer the project directory from the conversation - default to the current working directory if it looks like a React app (a \`package.json\` with \`react\` among its dependencies).
+If it is empty, infer the project directory from the conversation - default to the current working directory if it looks like a React, Vue, or Svelte app (a \`package.json\` with \`react\`, \`vue\`, or \`svelte\` among its dependencies).
 
 ## When to use
 
@@ -73,12 +74,13 @@ ${home.help[home.help.length - 1]}
 
 ## Workflow
 
-1. Run \`npx -y reactive-axi <project-dir>\` to open or resume a review session. It auto-detects the framework (Vite, TanStack Start, Next.js Pages/App Router, or Create React App) and the installed React version from the project's own \`package.json\`/\`node_modules\` - nothing to configure - spawns the project's own dev server, and opens a browser showing exactly what was detected in the chrome's topbar.
+1. Run \`npx -y reactive-axi <project-dir>\` to open or resume a review session. It auto-detects the framework (Vite, TanStack Start, Next.js Pages/App Router, Create React App, plain Vite+Vue, or plain Vite+Svelte) and the installed framework version from the project's own \`package.json\`/\`node_modules\` - nothing to configure - spawns the project's own dev server, and opens a browser showing exactly what was detected in the chrome's topbar.
 2. Run \`npx -y reactive-axi poll <project-dir>\` to long-poll for the reviewer's queued feedback.
    On the first poll, prefer \`--agent-reply "<one-line summary of what's loaded and what to check first>"\` so the conversation panel opens with context.
 ${POLL_WAKE_PATH_RULES.map((rule) => `   ${skillCommandText(rule)}`).join("\n")}
 3. When poll returns feedback, apply each prompt to the actual source file - the prompt's \`target\` includes the resolved \`fileName\`/\`lineNumber\` when available, and the change hot-reloads live in the reviewer's browser automatically once saved. A prompt's \`kind\` distinguishes a code change (\`change\`, the default), a question that just wants an answer in the conversation (\`question\`), a comment/FYI (\`comment\`), or a bug report (\`bug\`) - only \`change\`/\`bug\` normally need a source edit.
    If a prompt's \`target\` has \`"unresolved": true\`, reactive-axi could not find an exact source location for that element - typically a Next.js App Router Server Component, whose click target resolves into React's own internal RSC runtime rather than application code. Use the target's \`selector\`/\`route\` and the prompt text itself to find the right file instead of expecting a \`fileName\`/\`lineNumber\`.
+   If a prompt's \`target\` has \`"lineUnresolved": true\` (Vue only), the \`fileName\`/\`componentName\` are real and resolved, but there's no exact line - Vue's template compiler doesn't emit per-element line metadata by default. Use the \`fileName\`/\`componentName\` to find the right spot in that file instead of expecting a \`lineNumber\`.
 4. Reply with \`--agent-reply "<message>"\` on the next poll to answer a question or summarize what changed, and keep the loop going under the same foreground-or-verified-wake-path rule.
 5. Run \`npx -y reactive-axi end <project-dir>\` when the review is finished.
 6. If the user ends the session from the browser instead, the poll response reports it (\`status: "ended"\`) - stop polling and do not reopen the session uninvited. Deliver any remaining updates directly in this conversation.

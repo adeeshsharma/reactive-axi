@@ -15,6 +15,8 @@ import path from "node:path";
 // runtime fields are "last known", not a guarantee.
 
 const REACT_TARGET_TYPE = "react-component";
+const VUE_TARGET_TYPE = "vue-component";
+const SVELTE_TARGET_TYPE = "svelte-component";
 const MAX_TEXT_LEN = 4000;
 
 export class SessionStore {
@@ -281,6 +283,8 @@ function normalizePrompt(prompt) {
 function normalizeTarget(target) {
   if (!target || typeof target !== "object" || Array.isArray(target)) return null;
   if (target.type === REACT_TARGET_TYPE) return normalizeReactComponentTarget(target);
+  if (target.type === VUE_TARGET_TYPE) return normalizeVueComponentTarget(target);
+  if (target.type === SVELTE_TARGET_TYPE) return normalizeSvelteComponentTarget(target);
   // text-range and any other/legacy target shapes pass through unchanged.
   return JSON.parse(JSON.stringify(target));
 }
@@ -309,4 +313,39 @@ export function normalizeReactComponentTarget(target) {
 function finiteInt(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
+}
+
+// Validate and canonicalize a vue-component target - same strip-to-fixed-shape purpose as
+// normalizeReactComponentTarget, but with its own honesty flag rather than reusing
+// `unresolved`. Vue's resolution (vue-inspector.js) genuinely has a real fileName/componentName
+// even when it has no line/column - `unresolved` would wrongly imply nothing real was found at
+// all (React's meaning of the flag), so `lineUnresolved: true` marks the narrower, honest gap:
+// file known, line-level precision isn't available without the target project opting into
+// vite-plugin-vue-inspector (see memory-bank/vue-svelte-plan.md).
+export function normalizeVueComponentTarget(target) {
+  return {
+    type: VUE_TARGET_TYPE,
+    fileName: String(target.fileName || "").slice(0, 500),
+    lineNumber: finiteInt(target.lineNumber),
+    columnNumber: finiteInt(target.columnNumber),
+    componentName: String(target.componentName || "").slice(0, 200),
+    selector: String(target.selector || "").slice(0, 300),
+    route: String(target.route || "").slice(0, 2000),
+    ...(target.lineNumber ? {} : { lineUnresolved: true }),
+  };
+}
+
+// Validate and canonicalize a svelte-component target - Svelte's resolution
+// (svelte-inspector.js) is already fully resolved client-side (real file/line/column, no
+// server-side sourcemap step needed the way React 19's debugStack path requires), so there's
+// no `unresolved`/`lineUnresolved` flag to carry here at all.
+export function normalizeSvelteComponentTarget(target) {
+  return {
+    type: SVELTE_TARGET_TYPE,
+    fileName: String(target.fileName || "").slice(0, 500),
+    lineNumber: finiteInt(target.lineNumber),
+    columnNumber: finiteInt(target.columnNumber),
+    selector: String(target.selector || "").slice(0, 300),
+    route: String(target.route || "").slice(0, 2000),
+  };
 }

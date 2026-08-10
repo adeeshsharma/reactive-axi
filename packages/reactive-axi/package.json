@@ -1,7 +1,7 @@
 {
   "name": "reactive-axi",
   "version": "0.0.3",
-  "description": "Click any element in your live React app and send feedback straight to your coding agent, resolved to the exact source file and line.",
+  "description": "Click any element in your live React, Vue, or Svelte app and send feedback straight to your coding agent, resolved to the exact source location.",
   "type": "module",
   "homepage": "https://github.com/adeeshsharma/reactive-axi#readme",
   "repository": {
@@ -17,7 +17,7 @@
     "url": "https://github.com/adeeshsharma"
   },
   "bin": {
-    "reactive-axi": "bin/reactive-axi.js"
+    "reactive-axi": "dist/cli.mjs"
   },
   "files": [
     "dist",
@@ -47,6 +47,8 @@
     "agent",
     "cli",
     "react",
+    "vue",
+    "svelte",
     "devtools",
     "review",
     "collaboration"
