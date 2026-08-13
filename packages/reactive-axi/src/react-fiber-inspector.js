@@ -1,4 +1,7 @@
-import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
+import { realpath } from "node:fs/promises";
+import path from "node:path";
+
+import { AnyMap, originalPositionFor } from "@jridgewell/trace-mapping";
 
 // Click-to-source resolution, proven in Phase 0 Spike B - the first attempt, based on
 // click-to-react-component's _debugSource + renderer.findFiberByHostInstance technique,
@@ -72,15 +75,28 @@ export function getFiberForNode(node) {
   return fallback;
 }
 
-// Walk the owner chain (fiber.type is a function/class for a real component; a string means
-// a host element like "button") to find the nearest named component - mirrors
-// click-to-react-component's getDisplayNameFromReactInstance.js approach.
+// A single fiber's OWN name, if its type is a real component (function/class/forwardRef) - null
+// for a host element (fiber.type is a plain string like "button") or anything else unnamed.
+// Deliberately does NOT walk _debugOwner - that's componentNameForFiber's job (a search from a
+// starting fiber to the nearest named one). This per-hop getter exists separately because the
+// ancestry/anchor walks below need to know, at each individual hop, whether THAT hop specifically
+// is a real named component boundary - not "the nearest one from here," which would collapse
+// distinct hops together.
+export function nameForFiberOwnType(fiber) {
+  const type = fiber.type;
+  if (typeof type === "function") return type.displayName || type.name || "(anonymous)";
+  if (type && typeof type === "object" && type.render) return type.render.name || "(memo/forwardRef)";
+  return null;
+}
+
+// Walk the owner chain to find the nearest named component - mirrors
+// click-to-react-component's getDisplayNameFromReactInstance.js approach. Built on
+// nameForFiberOwnType (see above) rather than duplicating the type-checking logic.
 export function componentNameForFiber(fiber) {
   let node = fiber;
   while (node) {
-    const type = node.type;
-    if (typeof type === "function") return type.displayName || type.name || "(anonymous)";
-    if (type && typeof type === "object" && type.render) return type.render.name || "(memo/forwardRef)";
+    const name = nameForFiberOwnType(node);
+    if (name) return name;
     node = node._debugOwner;
   }
   return null;
@@ -94,10 +110,26 @@ export function parseCallSiteFrame(stack) {
     .split("\n")
     .slice(1); // drop the "Error: ..." message line
   for (const line of lines) {
-    const match = line.match(/at\s+(?:\S+\s+)?\(?(https?:\/\/[^\s)]+):(\d+):(\d+)\)?/);
+    const match = line.match(/at\s+(?:(\S+)\s+)?\(?(https?:\/\/[^\s)]+):(\d+):(\d+)\)?/);
     if (!match) continue;
-    const [, url, lineStr, colStr] = match;
-    if (url.includes("react_jsx-dev-runtime") || url.includes("react-dom")) continue;
+    const [, fnName, url, lineStr, colStr] = match;
+    // Skip the jsx-runtime's own capturing frame - this is always the first real frame in the
+    // stack (React's `jsx()`/`jsxs()`/`jsxDEV()` capture `new Error().stack` at their own call
+    // site), never a real call site itself, regardless of bundler.
+    //
+    // Two independent signals, kept both on purpose - confirmed empirically that neither alone
+    // is sufficient across every bundler tested:
+    //  - The URL-substring check (react_jsx-(dev-)?runtime, react-dom) works for Vite, which
+    //    gives every pre-bundled dependency its own distinctly-named chunk file.
+    //  - The FUNCTION-NAME check (fnName === "exports.jsxDEV"/"exports.jsx"/"exports.jsxs")
+    //    is the one that actually matters for Next.js's Turbopack dev server, confirmed real:
+    //    Turbopack merges many unrelated packages into one arbitrarily-hash-named chunk (e.g.
+    //    `node_modules__pnpm_xxxxx._.js`), so the URL carries no identifying information at
+    //    all - only the frame's own function name reliably says "this is jsx-runtime's own
+    //    capturing frame," and it's the same name (`exports.jsxDEV`/`exports.jsx`) regardless
+    //    of which chunk React's jsx-runtime happened to get bundled into.
+    if (fnName === "exports.jsxDEV" || fnName === "exports.jsx" || fnName === "exports.jsxs") continue;
+    if (/jsx-(dev-)?runtime/.test(url) || url.includes("react-dom")) continue;
     return { url, line: Number(lineStr), column: Number(colStr) };
   }
   return null;
@@ -148,6 +180,160 @@ export function rectToPlainObject(rect) {
   };
 }
 
+// Cheap, client-side-only heuristic: does this path look like it's under node_modules? Used to
+// decide whether to keep walking the owner chain for a better (app-level) candidate, not as a
+// last-resort guess - confirmed empirically sufficient (not just convenient) for every
+// direct-metadata-read resolution path (this file's own _debugSource path, plus
+// vue-inspector.js and svelte-inspector.js): Vite resolves symlinks before compiling a file and
+// handing back _debugSource.fileName/__file/__svelte_meta.loc.file, so a workspace-linked local
+// package's reported path never contains "node_modules" in the first place - no fs.realpath
+// step needed here. (React's _debugStack path is different - see classifyDebugStackVendorSource
+// below, which does a real realpath-based check, because that path already requires a server
+// round trip and resolves through a sourcemap's own `source` field, not read directly off a
+// compiler-attached property.) Matches both `/` and `\` separators since _debugSource.fileName
+// can be a real OS filesystem path, not just a URL.
+export function looksLikeVendorPath(candidatePath) {
+  return /[\\/]node_modules[\\/]/.test(String(candidatePath || ""));
+}
+
+// Best-effort package name from an already-known-vendor path (e.g. ".../node_modules/@radix-ui
+// /react-accordion/dist/index.mjs" -> "@radix-ui/react-accordion"). Pure string extraction, safe
+// to run client-side (no filesystem access needed) since it's only ever applied to a path that
+// looksLikeVendorPath already flagged, not used to decide vendor-or-not itself.
+export function extractVendorPackageName(candidatePath) {
+  // The LAST node_modules/<pkg> segment, not the first - pnpm nests every package under
+  // node_modules/.pnpm/<pkg>@<version>/node_modules/<pkg>, so the first segment is always the
+  // literal ".pnpm" virtual-store directory, never a real package name. Confirmed real against
+  // a live Next.js click resolving into React's own package through this exact structure.
+  const matches = [...String(candidatePath || "").matchAll(/node_modules[\\/](@[^\\/]+[\\/][^\\/]+|[^\\/]+)/g)];
+  return matches.length ? matches[matches.length - 1][1] : undefined;
+}
+
+// A clicked DOM node's own fiber tells you *where its literal JSX tag was written* - for a host
+// element rendered deep inside a library's own component, that's the library's own file, not
+// the app's usage site. `_debugOwner` (already walked by componentNameForFiber, but only for a
+// display name) is the fiber of whichever component's render call *created* this element, so
+// walking it upward reaches the app's own invocation of the library component. Bounded to guard
+// against a pathological/circular chain - real component trees are nowhere near this deep.
+// Exported so server.js's createSdkJs can inline it into the composed SDK script - a shipped
+// function referencing an un-inlined module-scope constant is a ReferenceError at runtime, a
+// real bug class this project has hit before (REACT_DEVTOOLS_HOOK_MARKER, techContext.md) and
+// confirmed to hit here too, empirically, via a real end-to-end Playwright pass - not caught by
+// any unit test, since those import the real module where the constant is naturally in scope.
+export const MAX_OWNER_CHAIN_HOPS = 12;
+
+// _debugSource path (React <=18): fully client-side, no network cost - fileName is already a
+// plain string on every fiber. Walks _debugOwner from `fiber` exactly once, producing all three
+// pieces of the click-to-source context in a single pass:
+//  - `clicked` - the first hop with any _debugSource at all, resolved to its own real location
+//    regardless of vendor status (ground truth of what was literally clicked - never silently
+//    redirected the way the old single-location result was).
+//  - `anchor` - the first LATER hop (strictly after `clicked`'s own hop) that is both non-vendor
+//    and a genuinely different named component than `clicked` - not just "the next hop with a
+//    location," because a component's own fiber and the fiber for wherever it was originally
+//    mounted (e.g. main.jsx's createRoot(...).render call) can carry the *same* componentName at
+//    consecutive hops (confirmed real via a live spike) despite pointing at different files -
+//    that pairing is app-mounting boilerplate, not a useful "enclosing component" answer, so it's
+//    deliberately excluded by requiring the name to differ, not just the location.
+//  - `ancestry` - every hop's own component name (nameForFiberOwnType, not the searching
+//    componentNameForFiber), nearest-to-farthest, adjacent-deduplicated (forwardRef wrapping
+//    produces real back-to-back duplicate names, confirmed empirically).
+// Exported for the same reason buildSelector/rectToPlainObject are (see that comment above):
+// server.js's createSdkJs re-declares every EXPORTED function of this module as a same-scope
+// const before invoking resolveClickTarget in the browser - an unexported helper referenced by
+// a shipped function would be a ReferenceError at runtime, a real bug class this project has
+// already hit once (REACT_DEVTOOLS_HOOK_MARKER, techContext.md).
+export function collectDebugSourceChain(fiber, clickedComponentName) {
+  const ancestry = [];
+  let clicked = null;
+  let anchor = null;
+  let lastName = null;
+  let owner = fiber;
+  for (let hops = 0; owner && hops < MAX_OWNER_CHAIN_HOPS; hops++, owner = owner._debugOwner) {
+    const name = nameForFiberOwnType(owner);
+    if (name && name !== lastName) {
+      ancestry.push(name);
+      lastName = name;
+    }
+    if (!owner._debugSource) continue;
+    const { fileName, lineNumber = 1, columnNumber = 1 } = owner._debugSource;
+    const vendor = looksLikeVendorPath(fileName);
+    if (!clicked) {
+      clicked = vendor
+        ? {
+            componentName: clickedComponentName,
+            fileName,
+            lineNumber,
+            columnNumber,
+            vendor: true,
+            vendorPackage: extractVendorPackageName(fileName),
+          }
+        : { componentName: clickedComponentName, fileName, lineNumber, columnNumber, vendor: false };
+      continue;
+    }
+    if (!vendor && name && name !== clickedComponentName) {
+      anchor = { componentName: name, fileName, lineNumber, columnNumber };
+      break;
+    }
+  }
+  return { clicked, anchor, ancestry };
+}
+
+// _debugStack path (React 19+): parsing a stack trace back to a real source location needs a
+// server-side sourcemap fetch (resolveOriginalPosition, below - @jridgewell/trace-mapping can't
+// ship via fn.toString()), so this only collects *candidates* client-side (cheap - _debugStack
+// is already captured per fiber) by walking _debugOwner and parsing each owner's own stack, along
+// with each candidate's own component name (needed server-side to apply the same "anchor must be
+// a distinct component, not just a later hop" rule collectDebugSourceChain applies above) and the
+// full names-only `ancestry` list (free client-side - no sourcemap needed for names, which is
+// exactly why ancestry never carries per-hop locations, see the plan's cost tradeoff).
+// resolveReactComponentTarget resolves candidates lazily server-side - see that function for why
+// the authority for this path is a real fs.realpath check, not the same cheap string heuristic
+// used above.
+export function collectDebugStackCandidates(fiber) {
+  const candidates = [];
+  const ancestry = [];
+  let lastName = null;
+  let owner = fiber;
+  for (let hops = 0; owner && hops < MAX_OWNER_CHAIN_HOPS; hops++, owner = owner._debugOwner) {
+    const name = nameForFiberOwnType(owner);
+    if (name && name !== lastName) {
+      ancestry.push(name);
+      lastName = name;
+    }
+    if (!owner._debugStack || !owner._debugStack.stack) continue;
+    const frame = parseCallSiteFrame(owner._debugStack.stack);
+    if (frame)
+      candidates.push({
+        transformedUrl: frame.url,
+        transformedLine: frame.line,
+        transformedColumn: frame.column,
+        componentName: name,
+      });
+  }
+  return { candidates, ancestry };
+}
+
+// Which kind of location info (if any) is available anywhere in `fiber`'s own owner chain -
+// checked ahead of time rather than just testing `fiber._debugSource`/`fiber._debugStack`
+// directly, because of a real, empirically-confirmed gap: React does not always populate either
+// property on every fiber. Confirmed live against a real @radix-ui/react-accordion click on
+// React 18 - the clicked button's OWN fiber has neither `_debugSource` nor `_debugStack` at all
+// (both fully absent, not just vendor-shaped), while several owners up its `_debugOwner` chain
+// do. Testing the clicked fiber's own property directly would incorrectly fall through to the
+// OUTER loop's DOM-ancestor walk (a coarser, less precise fallback that predates this fix) and
+// miss the owner-chain walk entirely, even though real location info was reachable one level
+// up. A React version consistently uses one kind or the other wherever it's present at all, so
+// finding the first hop with either one determines which resolution path to take.
+export function findDebugInfoKind(fiber) {
+  let owner = fiber;
+  for (let hops = 0; owner && hops < MAX_OWNER_CHAIN_HOPS; hops++, owner = owner._debugOwner) {
+    if (owner._debugSource) return "debugSource";
+    if (owner._debugStack && owner._debugStack.stack) return "debugStack";
+  }
+  return null;
+}
+
 /**
  * @param {number} x
  * @param {number} y
@@ -168,20 +354,33 @@ export function resolveClickTarget(x, y, doc = document) {
       // card to the component being annotated, which is often larger than the exact spot
       // clicked (e.g. clicking inside a card's padding still anchors to the whole card).
       const rect = rectToPlainObject(domNode.getBoundingClientRect());
-      if (fiber._debugSource) {
-        const { fileName, lineNumber = 1, columnNumber = 1 } = fiber._debugSource;
-        return { resolution: "debugSource", selector, componentName, fileName, lineNumber, columnNumber, rect };
+      const debugInfoKind = findDebugInfoKind(fiber);
+      if (debugInfoKind === "debugSource") {
+        const { clicked, anchor, ancestry } = collectDebugSourceChain(fiber, componentName);
+        return { resolution: "debugSource", selector, clicked, anchor, ancestry, rect };
       }
-      if (fiber._debugStack && fiber._debugStack.stack) {
-        const frame = parseCallSiteFrame(fiber._debugStack.stack);
-        if (frame) {
+      if (debugInfoKind === "debugStack") {
+        const { candidates, ancestry } = collectDebugStackCandidates(fiber);
+        if (candidates.length > 0) {
+          const [first, ...rest] = candidates;
           return {
             resolution: "debugStack",
             selector,
+            // Raw wire shape only - resolveReactComponentTarget (server-side) folds this into the
+            // final `clicked.componentName` once resolved. Kept top-level here (not nested under
+            // a would-be `clicked` object yet) because the actual clicked/anchor split can't
+            // happen until the sourcemap round trip completes.
             componentName,
-            transformedUrl: frame.url,
-            transformedLine: frame.line,
-            transformedColumn: frame.column,
+            transformedUrl: first.transformedUrl,
+            transformedLine: first.transformedLine,
+            transformedColumn: first.transformedColumn,
+            // Additional owner-chain candidates, resolved server-side in priority order to find
+            // a distinct `anchor` - see resolveReactComponentTarget. Omitted when there's nothing
+            // beyond the first candidate, so a normal single-candidate payload stays exactly the
+            // shape it always was (no behavior change for callers that only ever look at the
+            // top-level fields).
+            ...(rest.length > 0 ? { fallbackCandidates: rest } : {}),
+            ancestry,
             rect,
           };
         }
@@ -202,9 +401,31 @@ export function resolveClickTarget(x, y, doc = document) {
  * @typedef {{ ok: boolean, status: number, text: () => Promise<string> }} MinimalFetchResponse
  */
 
+// Vite inlines its sourcemap as a base64 data URI; Next.js's Turbopack dev server and CRA's
+// webpack-dev-server never do - both confirmed real (fixtures/nextjs-pages-router,
+// fixtures/cra-app): they emit a plain relative filename (e.g.
+// `//# sourceMappingURL=node_modules__pnpm_xxxxx._.js.map`, `//# sourceMappingURL=bundle.js.map`),
+// a separate file that has to be fetched on its own, resolved relative to the transformed
+// file's own URL (the standard sourcemap-comment convention, not framework-specific). Both
+// shapes share the same `//# sourceMappingURL=<value>` comment; only what follows differs.
+async function loadSourceMap(transformedText, transformedUrl, fetchImpl) {
+  const match = transformedText.match(/\/\/# sourceMappingURL=(\S+)/);
+  if (!match) throw new Error(`no sourceMappingURL comment found in ${transformedUrl}`);
+  const mappingUrl = match[1];
+  const DATA_URI_PREFIX = "data:application/json;base64,";
+  if (mappingUrl.startsWith(DATA_URI_PREFIX)) {
+    return JSON.parse(Buffer.from(mappingUrl.slice(DATA_URI_PREFIX.length), "base64").toString("utf8"));
+  }
+  const resolvedMapUrl = new URL(mappingUrl, transformedUrl).toString();
+  const mapRes = await fetchImpl(resolvedMapUrl);
+  if (!mapRes.ok) throw new Error(`could not fetch external sourcemap ${resolvedMapUrl} (${mapRes.status})`);
+  return JSON.parse(await mapRes.text());
+}
+
 /**
- * Resolve a `debugStack`-tagged target (React 19+, coordinates in Vite's transformed file)
- * back to the real source location, by fetching the transformed file's inline sourcemap.
+ * Resolve a `debugStack`-tagged target (React 19+, coordinates in the transformed file) back
+ * to the real source location, by fetching the transformed file's sourcemap (inline or
+ * external, see loadSourceMap above).
  * @param {{ transformedUrl: string, transformedLine: number, transformedColumn: number, fetchImpl?: (url: string) => Promise<MinimalFetchResponse> }} options
  */
 export async function resolveOriginalPosition({
@@ -216,21 +437,82 @@ export async function resolveOriginalPosition({
   const res = await fetchImpl(transformedUrl);
   if (!res.ok) throw new Error(`could not fetch ${transformedUrl} to resolve its sourcemap (${res.status})`);
   const text = await res.text();
-  const match = text.match(/\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)/);
-  if (!match) throw new Error(`no inline sourcemap found in ${transformedUrl}`);
-  const mapJson = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
-  const tracer = new TraceMap(mapJson);
+  const mapJson = await loadSourceMap(text, transformedUrl, fetchImpl);
+  // AnyMap (not TraceMap) because Turbopack's dev sourcemaps are "sectioned"/index maps
+  // (a `sections` array of sub-maps, not a flat `sources` array) - confirmed real, TraceMap
+  // throws on this shape outright ("please use FlattenMap export instead"). AnyMap handles
+  // both sectioned and regular maps transparently, so it's a safe universal replacement -
+  // Vite's flat maps resolve through it identically to how TraceMap handled them before.
+  const tracer = new AnyMap(mapJson);
   // V8 stack columns are 1-based; trace-mapping expects 0-based.
   return originalPositionFor(tracer, { line: transformedLine, column: Math.max(0, transformedColumn - 1) });
 }
 
+// A sourcemap's `source` entry is often relative, sometimes just a bare filename (both
+// confirmed real from actual Vite dev sourcemaps, not assumed - see techContext.md) - resolve
+// it to a real local disk path using the transformed file's own URL path as the base directory,
+// the same convention Vite's dev server itself uses (a URL's path maps directly onto a
+// <projectRoot>-relative filesystem path). Used only internally to decide vendor-or-not; the
+// value actually persisted as `fileName` is unchanged from existing behavior (whatever
+// trace-mapping returned, verbatim).
+function resolveLocalSourcePath(transformedUrl, mapSource, projectRoot) {
+  if (!mapSource || !projectRoot) return mapSource || "";
+  const urlPath = new URL(transformedUrl).pathname;
+  return path.resolve(path.join(projectRoot, path.dirname(urlPath)), mapSource);
+}
+
+// Authoritative vendor check for the debugStack path - see looksLikeVendorPath's own comment
+// for why this path gets a real fs.realpath check while the other three resolution paths don't
+// (this one already requires a server round trip, and resolves through a sourcemap's own
+// possibly-relative `source` field rather than a compiler-attached absolute path).
+//
+// Deliberately NOT a "is this outside projectRoot" comparison - an earlier version of this
+// function tried that and it was wrong, caught while writing this file's own tests: a
+// workspace-linked local package can legitimately live *outside* the specific project directory
+// being reviewed (e.g. a sibling package elsewhere in the same monorepo) without being vendor at
+// all - it's real, developer-owned, editable source either way. The only thing that actually
+// makes something vendor is living under a `node_modules` directory - and pnpm's own store
+// structure means even a genuine third-party package's realpath still resolves through a
+// `node_modules`-named directory (confirmed: pnpm symlinks `node_modules/@pkg/name` to
+// `node_modules/.pnpm/@pkg+name@version/node_modules/@pkg/name`), so resolving the symlink and
+// re-running the same cheap string check on the *resolved* path is both simpler and correct -
+// no relative-path/project-root math needed. Falls back to the cheap heuristic on the
+// as-given path if the candidate isn't a real file on disk (e.g. a sourcemap entry that doesn't
+// actually resolve to anything real) rather than silently trusting an unverifiable path.
+async function isVendorSource(candidatePath, realpathImpl) {
+  if (!candidatePath) return false;
+  try {
+    return looksLikeVendorPath(await realpathImpl(candidatePath));
+  } catch {
+    return looksLikeVendorPath(candidatePath);
+  }
+}
+
+async function resolveDebugStackCandidate(candidate, { fetchImpl, projectRoot, realpathImpl }) {
+  const original = await resolveOriginalPosition({ ...candidate, fetchImpl }); // throws on failure - caller decides what to do
+  const fileName = original.source || "";
+  const localPath = resolveLocalSourcePath(candidate.transformedUrl, original.source, projectRoot);
+  const vendor = localPath ? await isVendorSource(localPath, realpathImpl) : looksLikeVendorPath(fileName);
+  return { fileName, lineNumber: original.line || 0, columnNumber: (original.column || 0) + 1, vendor, localPath };
+}
+
 /**
  * Takes a raw target as sent by the browser (either already resolution:"debugSource", or
- * resolution:"debugStack" needing a server-side sourcemap lookup) and returns a target with
- * fileName/lineNumber/columnNumber always populated and fully resolved. Never throws for a
- * resolution failure - falls back to reporting what's known (component name, selector) with
- * an empty fileName and `unresolved: true`, since a queued prompt should never be lost over a
- * sourcemap fetch failure.
+ * resolution:"debugStack" needing a server-side sourcemap lookup) and returns a target carrying
+ * `clicked`/`anchor`/`ancestry` (see the click-to-source context redesign plan) fully resolved.
+ * Never throws for a resolution failure - `clicked` falls back to reporting what's known
+ * (component name) with an empty fileName and `unresolved: true`, since a queued prompt should
+ * never be lost over a sourcemap fetch failure.
+ *
+ * Two independent resolutions happen here, not one - a real, deliberate cost/latency increase
+ * accepted by the plan: `clicked` is always resolved from the FIRST candidate (the literal
+ * clicked element's own creation site), regardless of vendor status - no more silently
+ * substituting a different, "better" location the way the old single-location result did.
+ * `anchor` is then searched for independently among `target.fallbackCandidates`, stopping at the
+ * first candidate that is both non-vendor AND a genuinely different named component than
+ * `clicked` (mirrors collectDebugSourceChain's own reasoning above for why "different hop" isn't
+ * enough by itself - a component's own fiber and its app-mounting call site can carry the same
+ * componentName at consecutive hops without being a useful "enclosing component" answer).
  *
  * Confirmed empirically against a real Next.js App Router Server Component (Phase 2): the
  * fetch itself succeeds, but the captured stack frame points into a compiled *React runtime*
@@ -239,41 +521,85 @@ export async function resolveOriginalPosition({
  * inspection, not assumed. This is the anticipated "Server Components may have no
  * client-Fiber presence" risk, just manifesting one level down: a fiber *is* found (so
  * resolveClickTarget doesn't error), but what it points to is React's own deserialization
- * code, not application source. `unresolved: true` lets the prompt output tell the agent the
- * truth instead of presenting an empty fileName as if it were normal, resolved data.
+ * code, not application source. `clicked.unresolved: true` lets the prompt output tell the
+ * agent the truth instead of presenting an empty fileName as if it were normal, resolved data.
+ * When `clicked` itself fails this way, `anchor` is still attempted (the fallback candidates are
+ * independent fibers, not guaranteed to hit the same unresolvable chunk) but realistically stays
+ * null too, since the underlying cause (no sourcemap for that chunk) tends to be shared.
+ *
+ * `projectRoot` (the session's own project directory - server.js threads it through from the
+ * session record) enables the real fs.realpath-based vendor check; omitted, this degrades to the
+ * same cheap string heuristic the other resolution paths use, rather than refusing to classify at
+ * all.
  * @param {Record<string, any>} target
- * @param {{ fetchImpl?: (url: string) => Promise<MinimalFetchResponse> }} [options]
+ * @param {{ fetchImpl?: (url: string) => Promise<MinimalFetchResponse>, projectRoot?: string, realpathImpl?: (p: string) => Promise<string> }} [options]
  */
-export async function resolveReactComponentTarget(target, { fetchImpl = fetch } = {}) {
+export async function resolveReactComponentTarget(
+  target,
+  { fetchImpl = fetch, projectRoot, realpathImpl = realpath } = {},
+) {
   if (target.resolution !== "debugStack") return target;
+  const base = {
+    type: target.type,
+    selector: target.selector,
+    route: target.route,
+    resolution: "debugStack",
+    ancestry: Array.isArray(target.ancestry) ? target.ancestry : [],
+  };
+
+  let clicked = null;
   try {
-    const original = await resolveOriginalPosition({
-      transformedUrl: target.transformedUrl,
-      transformedLine: target.transformedLine,
-      transformedColumn: target.transformedColumn,
-      fetchImpl,
-    });
-    return {
-      type: target.type,
-      selector: target.selector,
-      componentName: target.componentName,
-      route: target.route,
-      resolution: "debugStack",
-      fileName: original.source || "",
-      lineNumber: original.line || 0,
-      columnNumber: (original.column || 0) + 1, // back to 1-based for storage/display consistency
-    };
+    const result = await resolveDebugStackCandidate(
+      {
+        transformedUrl: target.transformedUrl,
+        transformedLine: target.transformedLine,
+        transformedColumn: target.transformedColumn,
+      },
+      { fetchImpl, projectRoot, realpathImpl },
+    );
+    clicked = result.vendor
+      ? {
+          componentName: target.componentName,
+          fileName: result.fileName,
+          lineNumber: result.lineNumber,
+          columnNumber: result.columnNumber,
+          vendor: true,
+          vendorPackage: extractVendorPackageName(result.localPath) || extractVendorPackageName(result.fileName),
+        }
+      : {
+          componentName: target.componentName,
+          fileName: result.fileName,
+          lineNumber: result.lineNumber,
+          columnNumber: result.columnNumber,
+          vendor: false,
+        };
   } catch {
-    return {
-      type: target.type,
-      selector: target.selector,
-      componentName: target.componentName,
-      route: target.route,
-      resolution: "debugStack",
-      fileName: "",
-      lineNumber: 0,
-      columnNumber: 0,
-      unresolved: true,
-    };
+    // this candidate's transformed file/sourcemap couldn't be fetched or decoded at all.
   }
+  if (!clicked) {
+    clicked = { componentName: target.componentName, fileName: "", lineNumber: 0, columnNumber: 0, unresolved: true };
+  }
+
+  let anchor = null;
+  const fallbackCandidates = Array.isArray(target.fallbackCandidates) ? target.fallbackCandidates : [];
+  for (const candidate of fallbackCandidates) {
+    if (candidate.componentName && candidate.componentName === target.componentName) continue;
+    let result;
+    try {
+      result = await resolveDebugStackCandidate(candidate, { fetchImpl, projectRoot, realpathImpl });
+    } catch {
+      continue; // this candidate's transformed file/sourcemap couldn't be fetched or decoded - try the next owner
+    }
+    if (!result.vendor) {
+      anchor = {
+        componentName: candidate.componentName,
+        fileName: result.fileName,
+        lineNumber: result.lineNumber,
+        columnNumber: result.columnNumber,
+      };
+      break;
+    }
+  }
+
+  return { ...base, clicked, anchor };
 }

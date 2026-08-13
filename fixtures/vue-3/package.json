@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fixture/vue-vendor-ui-kit": "workspace:*",
+    "reka-ui": "^2.10.3",
     "vue": "^3.5.40"
   },
   "devDependencies": {

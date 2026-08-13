@@ -20,9 +20,16 @@ import {
 import { startSessionProxy } from "./proxy.js";
 import {
   buildSelector,
+  collectDebugSourceChain,
+  collectDebugStackCandidates,
   componentNameForFiber,
+  extractVendorPackageName,
+  findDebugInfoKind,
   getFiberForNode,
   installReactDevtoolsHook,
+  looksLikeVendorPath,
+  MAX_OWNER_CHAIN_HOPS,
+  nameForFiberOwnType,
   parseCallSiteFrame,
   REACT_DEVTOOLS_HOOK_MARKER,
   rectToPlainObject,
@@ -32,17 +39,23 @@ import {
 import { canonicalProjectRoot, SessionStore, sessionKey } from "./session-store.js";
 import {
   buildSelector as buildSelectorSvelte,
+  collectSvelteAncestryChain,
+  extractVendorPackageName as extractVendorPackageNameSvelte,
   getSvelteMetaForNode,
+  looksLikeVendorPath as looksLikeVendorPathSvelte,
   rectToPlainObject as rectToPlainObjectSvelte,
   resolveClickTarget as resolveClickTargetSvelte,
 } from "./svelte-inspector.js";
 import {
   buildSelector as buildSelectorVue,
+  collectVueInstanceChain,
   componentNameForVueInstance,
+  extractVendorPackageName as extractVendorPackageNameVue,
   getVueInstanceForNode,
+  looksLikeVendorPath as looksLikeVendorPathVue,
+  nameForVueInstanceOwnType,
   rectToPlainObject as rectToPlainObjectVue,
   resolveClickTarget as resolveClickTargetVue,
-  sourceFileForVueInstance,
 } from "./vue-inspector.js";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60_000;
@@ -241,11 +254,19 @@ export async function serve({
       // A react-component target may arrive unresolved (React 19's debugStack path) - resolve
       // it against the real transformed source (reachable through this session's own proxy)
       // BEFORE it is ever persisted to state.json, so the agent only ever sees final,
-      // human-readable file/line coordinates.
+      // human-readable file/line coordinates. projectRoot is threaded through so
+      // resolveReactComponentTarget can run its real fs.realpath-based vendor-source check
+      // (owner-chain candidates resolving into node_modules get walked past, not reported as if
+      // they were trustworthy app code) - looked up once per request, not per prompt, since
+      // every prompt in a batch belongs to the same session.
+      const existingSession = await store.findByKey(req.params.key);
       const resolvedPrompts = await Promise.all(
         prompts.map(async (prompt) => {
           if (prompt?.target?.type === "react-component" && prompt.target.resolution === "debugStack") {
-            return { ...prompt, target: await resolveReactComponentTarget(prompt.target) };
+            return {
+              ...prompt,
+              target: await resolveReactComponentTarget(prompt.target, { projectRoot: existingSession?.projectRoot }),
+            };
           }
           return prompt;
         }),
@@ -788,8 +809,11 @@ function inspectorScriptFor(framework, frameworkVersion) {
   if (framework === "vue") {
     return `
 const getVueInstanceForNode = ${getVueInstanceForNode.toString()};
+const nameForVueInstanceOwnType = ${nameForVueInstanceOwnType.toString()};
 const componentNameForVueInstance = ${componentNameForVueInstance.toString()};
-const sourceFileForVueInstance = ${sourceFileForVueInstance.toString()};
+const looksLikeVendorPath = ${looksLikeVendorPathVue.toString()};
+const extractVendorPackageName = ${extractVendorPackageNameVue.toString()};
+const collectVueInstanceChain = ${collectVueInstanceChain.toString()};
 const buildSelector = ${buildSelectorVue.toString()};
 const rectToPlainObject = ${rectToPlainObjectVue.toString()};
 const resolveClickTarget = ${resolveClickTargetVue.toString()};
@@ -804,6 +828,9 @@ const resolveClickTarget = ${resolveClickTargetVue.toString()};
     const zeroIndexedLines = svelteMajor === 4;
     return `
 const getSvelteMetaForNode = ${getSvelteMetaForNode.toString()};
+const looksLikeVendorPath = ${looksLikeVendorPathSvelte.toString()};
+const extractVendorPackageName = ${extractVendorPackageNameSvelte.toString()};
+const collectSvelteAncestryChain = ${collectSvelteAncestryChain.toString()};
 const buildSelector = ${buildSelectorSvelte.toString()};
 const rectToPlainObject = ${rectToPlainObjectSvelte.toString()};
 const resolveClickTargetImpl = ${resolveClickTargetSvelte.toString()};
@@ -813,12 +840,19 @@ const resolveClickTarget = (x, y) => resolveClickTargetImpl(x, y, document, ${JS
   // Default: every React-based framework (Vite/Next.js/CRA/TanStack Start).
   return `
 const REACT_DEVTOOLS_HOOK_MARKER = ${JSON.stringify(REACT_DEVTOOLS_HOOK_MARKER)};
+const MAX_OWNER_CHAIN_HOPS = ${JSON.stringify(MAX_OWNER_CHAIN_HOPS)};
 const installReactDevtoolsHook = ${installReactDevtoolsHook.toString()};
 const getFiberForNode = ${getFiberForNode.toString()};
+const nameForFiberOwnType = ${nameForFiberOwnType.toString()};
 const componentNameForFiber = ${componentNameForFiber.toString()};
 const parseCallSiteFrame = ${parseCallSiteFrame.toString()};
 const buildSelector = ${buildSelector.toString()};
 const rectToPlainObject = ${rectToPlainObject.toString()};
+const looksLikeVendorPath = ${looksLikeVendorPath.toString()};
+const extractVendorPackageName = ${extractVendorPackageName.toString()};
+const findDebugInfoKind = ${findDebugInfoKind.toString()};
+const collectDebugSourceChain = ${collectDebugSourceChain.toString()};
+const collectDebugStackCandidates = ${collectDebugStackCandidates.toString()};
 const resolveClickTarget = ${resolveClickTarget.toString()};
 installReactDevtoolsHook();
 `;

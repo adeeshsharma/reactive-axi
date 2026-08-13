@@ -289,63 +289,151 @@ function normalizeTarget(target) {
   return JSON.parse(JSON.stringify(target));
 }
 
-// Validate and canonicalize a react-component target coming back from the browser - strips
-// unknown/hostile fields to a fixed shape before it reaches state.json and the agent.
-export function normalizeReactComponentTarget(target) {
+// The click-to-source context redesign: every framework's target now carries `clicked` (the
+// literal clicked element's own resolved location, vendor or not - ground truth of what was
+// clicked, never silently substituted), `anchor` (the nearest enclosing named component one
+// hop further out, regardless of vendor status - the "what's happening around this element"
+// context, applying to plain app clicks nested inside other components just as much as vendor
+// ones), and `ancestry` (component names only, nearest-to-farthest, deduplicated - the full
+// path context, not per-hop locations, kept cheap by design). See each inspector module
+// (react-fiber-inspector.js/vue-inspector.js/svelte-inspector.js) for how each framework's own
+// walk produces this same shape from very different underlying mechanisms. This is a full
+// redesign of the three normalizers below, not an additive change - nothing has shipped yet
+// (see memory-bank/activeContext.md), so there's no dual-shape/deprecation concern.
+
+function finiteIntOrNull(value) {
+  if (value == null) return null;
+  // >= 0, not > 0 - a real, confirmed-live gap: column 0 is a genuinely valid resolved value
+  // (e.g. Svelte's __svelte_meta.loc.column can legitimately report 0), not the same thing as
+  // "no value at all" (which is what `value == null` above already handles separately).
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : null;
+}
+
+function normalizeAncestry(ancestry) {
+  if (!Array.isArray(ancestry)) return [];
+  // MAX_OWNER_CHAIN_HOPS (react-fiber-inspector.js) already bounds every inspector's own walk
+  // to 12 hops before this ever runs - this cap is a second, independent belt-and-suspenders
+  // limit against a hostile/malformed payload, not the primary bound.
+  return ancestry.slice(0, 20).map((name) => String(name).slice(0, 200));
+}
+
+function normalizeAnchor(anchor) {
+  if (!anchor || typeof anchor !== "object") return null;
   return {
-    type: REACT_TARGET_TYPE,
-    fileName: String(target.fileName || "").slice(0, 500),
-    lineNumber: finiteInt(target.lineNumber),
-    columnNumber: finiteInt(target.columnNumber),
-    componentName: String(target.componentName || "").slice(0, 200),
-    selector: String(target.selector || "").slice(0, 300),
-    route: String(target.route || "").slice(0, 2000),
-    resolution: target.resolution === "debugStack" ? "debugStack" : "debugSource",
-    // Set when server-side sourcemap resolution genuinely couldn't find a real source
-    // location - confirmed real for Next.js App Router Server Components, whose captured
-    // stack frame points into React's own RSC-deserialization runtime chunk, not application
-    // code (see react-fiber-inspector.js). Omitted (not `false`) when resolution succeeded,
-    // so it never clutters a normal, fully-resolved target.
-    ...(target.unresolved ? { unresolved: true } : {}),
+    componentName: anchor.componentName != null ? String(anchor.componentName).slice(0, 200) : null,
+    fileName: String(anchor.fileName || "").slice(0, 500),
+    lineNumber: finiteIntOrNull(anchor.lineNumber),
+    columnNumber: finiteIntOrNull(anchor.columnNumber),
   };
 }
 
-function finiteInt(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
+// `hasAnchor` decides which of buildVendorNote's two variants applies - only knowable at this
+// level (not inside a standalone per-location normalizer), since it depends on whether the
+// *sibling* `anchor` field resolved to anything, not on `clicked` alone.
+function normalizeClicked(clicked, hasAnchor) {
+  if (!clicked || typeof clicked !== "object") {
+    return { componentName: null, fileName: "", lineNumber: null, columnNumber: null, unresolved: true };
+  }
+  const componentName = clicked.componentName != null ? String(clicked.componentName).slice(0, 200) : null;
+  const fileName = String(clicked.fileName || "").slice(0, 500);
+  const lineNumber = finiteIntOrNull(clicked.lineNumber);
+  const columnNumber = finiteIntOrNull(clicked.columnNumber);
+  // Set when resolution genuinely couldn't find a real source location at all - confirmed real
+  // for Next.js App Router Server Components, whose captured stack frame points into React's
+  // own RSC-deserialization runtime chunk, not application code (react-fiber-inspector.js), or
+  // for a Vue/Svelte instance chain with no __file/__svelte_meta anywhere in it. Deliberately
+  // distinct from `vendor`: here nothing real was found at all, not "found but third-party".
+  if (clicked.unresolved) return { componentName, fileName, lineNumber, columnNumber, unresolved: true };
+  if (!clicked.vendor) return { componentName, fileName, lineNumber, columnNumber, vendor: false };
+  // vendorPackage is a best-effort extraction (omitted, not an empty string, when it couldn't
+  // be determined) - same "never clutter a field that isn't real" discipline as `unresolved`.
+  const vendorPackage = clicked.vendorPackage ? String(clicked.vendorPackage).slice(0, 200) : undefined;
+  return {
+    componentName,
+    fileName,
+    lineNumber,
+    columnNumber,
+    vendor: true,
+    ...(vendorPackage ? { vendorPackage } : {}),
+    note: buildVendorNote(vendorPackage, fileName, hasAnchor),
+  };
+}
+
+// The agent-facing guidance attached to `clicked.note` whenever `clicked.vendor` is true -
+// computed once, centrally, here rather than duplicated per inspector module, since it only
+// depends on already-known data (vendorPackage, clicked's own fileName, whether an anchor was
+// found) and needs no DOM/fiber access - so it does NOT need to ship via fn.toString() into the
+// browser SDK the way looksLikeVendorPath/extractVendorPackageName had to (see the plan's
+// Design §3). Two variants: `hasAnchor` true is the common case (an app-level usage site was
+// found); false mirrors the rarer "whole chain is vendor" case, where the honest answer is to
+// say so rather than point at a low-confidence guess.
+export function buildVendorNote(vendorPackage, fileName, hasAnchor) {
+  const pkg = vendorPackage ? `"${vendorPackage}"` : "a third-party package";
+  const location = fileName ? ` (${fileName})` : "";
+  if (hasAnchor) {
+    return (
+      `This element is rendered by ${pkg}${location}, not application code - do not edit that file, ` +
+      `it's third-party/bundled source and changes there won't persist. Understand what this ` +
+      `component does (its role, props, behavior) to inform the change, but make the actual edit in ` +
+      `the application's own code - see "anchor" for where it's used.`
+    );
+  }
+  return (
+    `This element is rendered by ${pkg}${location}, not application code - do not edit that file. An ` +
+    `application-level usage of this component could not be located automatically - search the app's ` +
+    `own source for where it imports or uses ${pkg}, or ask the user for more context before ` +
+    `assuming where to edit.`
+  );
+}
+
+// Validate and canonicalize a react-component target coming back from the browser - strips
+// unknown/hostile fields to a fixed shape before it reaches state.json and the agent.
+export function normalizeReactComponentTarget(target) {
+  const anchor = normalizeAnchor(target.anchor);
+  return {
+    type: REACT_TARGET_TYPE,
+    selector: String(target.selector || "").slice(0, 300),
+    route: String(target.route || "").slice(0, 2000),
+    resolution: target.resolution === "debugStack" ? "debugStack" : "debugSource",
+    clicked: normalizeClicked(target.clicked, Boolean(anchor)),
+    anchor,
+    ancestry: normalizeAncestry(target.ancestry),
+  };
 }
 
 // Validate and canonicalize a vue-component target - same strip-to-fixed-shape purpose as
-// normalizeReactComponentTarget, but with its own honesty flag rather than reusing
-// `unresolved`. Vue's resolution (vue-inspector.js) genuinely has a real fileName/componentName
-// even when it has no line/column - `unresolved` would wrongly imply nothing real was found at
-// all (React's meaning of the flag), so `lineUnresolved: true` marks the narrower, honest gap:
-// file known, line-level precision isn't available without the target project opting into
-// vite-plugin-vue-inspector (see memory-bank/vue-svelte-plan.md).
+// normalizeReactComponentTarget. Vue's `clicked`/`anchor` genuinely have a real
+// fileName/componentName even when they have no line/column (lineNumber/columnNumber stay
+// `null`, never guessed) - line-level precision isn't available without the target project
+// opting into vite-plugin-vue-inspector (see memory-bank/vue-svelte-plan.md).
 export function normalizeVueComponentTarget(target) {
+  const anchor = normalizeAnchor(target.anchor);
   return {
     type: VUE_TARGET_TYPE,
-    fileName: String(target.fileName || "").slice(0, 500),
-    lineNumber: finiteInt(target.lineNumber),
-    columnNumber: finiteInt(target.columnNumber),
-    componentName: String(target.componentName || "").slice(0, 200),
     selector: String(target.selector || "").slice(0, 300),
     route: String(target.route || "").slice(0, 2000),
-    ...(target.lineNumber ? {} : { lineUnresolved: true }),
+    clicked: normalizeClicked(target.clicked, Boolean(anchor)),
+    anchor,
+    ancestry: normalizeAncestry(target.ancestry),
   };
 }
 
 // Validate and canonicalize a svelte-component target - Svelte's resolution
 // (svelte-inspector.js) is already fully resolved client-side (real file/line/column, no
-// server-side sourcemap step needed the way React 19's debugStack path requires), so there's
-// no `unresolved`/`lineUnresolved` flag to carry here at all.
+// server-side sourcemap step needed the way React 19's debugStack path requires). `clicked`'s
+// `componentName` is always `null` here - Svelte's metadata identifies a source file, not a
+// named component instance - and `ancestry` is a list of distinct file paths, not display
+// names, since that's the closest thing to "component identity" this framework exposes (see
+// svelte-inspector.js's own comment on collectSvelteAncestryChain for the full reasoning).
 export function normalizeSvelteComponentTarget(target) {
+  const anchor = normalizeAnchor(target.anchor);
   return {
     type: SVELTE_TARGET_TYPE,
-    fileName: String(target.fileName || "").slice(0, 500),
-    lineNumber: finiteInt(target.lineNumber),
-    columnNumber: finiteInt(target.columnNumber),
     selector: String(target.selector || "").slice(0, 300),
     route: String(target.route || "").slice(0, 2000),
+    clicked: normalizeClicked(target.clicked, Boolean(anchor)),
+    anchor,
+    ancestry: normalizeAncestry(target.ancestry),
   };
 }

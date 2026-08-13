@@ -1,5 +1,6 @@
 import Image from "next/image";
 import styles from "./page.module.css";
+import VendorComponents from "./VendorComponents";
 
 export default function Home() {
   return (
@@ -63,6 +64,7 @@ export default function Home() {
             Documentation
           </a>
         </div>
+        <VendorComponents />
       </main>
     </div>
   );

@@ -147,9 +147,13 @@ function openCardForSelection(result) {
   setCardKind("change");
   cardInput.value = "";
   positionCardNear(result.rect);
-  cardTarget.textContent = result.componentName
-    ? `${result.componentName} • ${result.selector || ""}`
-    : result.selector || "element";
+  // `result.clicked.componentName` for the three paths already fully resolved client-side
+  // (debugSource, vue-component, svelte-component - always null for the latter, an honest
+  // Svelte limitation, see svelte-inspector.js); `result.componentName` (top-level, raw wire
+  // shape) for React's debugStack path, whose clicked/anchor split doesn't exist yet until
+  // resolveReactComponentTarget runs server-side.
+  const displayName = result.clicked?.componentName || result.componentName;
+  cardTarget.textContent = displayName ? `${displayName} • ${result.selector || ""}` : result.selector || "element";
   cardTarget.title = cardTarget.textContent;
   annotationCard.hidden = false;
   cardInput.focus();
@@ -181,8 +185,14 @@ cardClose.addEventListener("click", closeCard);
 
 function labelFor(target, fallback) {
   if (!target) return fallback;
-  if (target.fileName) return `${target.fileName}${target.lineNumber ? ":" + target.lineNumber : ""}`;
-  return target.componentName || target.selector || fallback;
+  const clicked = target.clicked;
+  if (clicked?.fileName) return `${clicked.fileName}${clicked.lineNumber ? ":" + clicked.lineNumber : ""}`;
+  // Falls back to `target.componentName` (the raw, top-level, pre-resolution field) for a
+  // React debugStack target queued before resolveReactComponentTarget has run server-side -
+  // `target.clicked` doesn't exist yet at that point, so there's no clicked.componentName to
+  // read; the raw wire shape still carries a componentName directly, same as before this
+  // redesign.
+  return clicked?.componentName || target.componentName || target.selector || fallback;
 }
 
 function commitCard({ alsoSend }) {
@@ -212,14 +222,35 @@ function commitCard({ alsoSend }) {
         ? {
             type: targetType,
             selector: pendingSelection.selector || "",
-            componentName: pendingSelection.componentName || "",
             resolution: pendingSelection.resolution || "debugSource",
-            fileName: pendingSelection.fileName || "",
-            lineNumber: pendingSelection.lineNumber || 0,
-            columnNumber: pendingSelection.columnNumber || 0,
-            transformedUrl: pendingSelection.transformedUrl || "",
-            transformedLine: pendingSelection.transformedLine || 0,
-            transformedColumn: pendingSelection.transformedColumn || 0,
+            ...(pendingSelection.clicked
+              ? {
+                  // Already fully resolved client-side - debugSource (React <=18),
+                  // vue-component, or svelte-component all produce clicked/anchor/ancestry
+                  // directly (see each inspector's own resolveClickTarget). Forwarded as-is;
+                  // session-store.js's normalizers read clicked/anchor/ancestry straight from
+                  // here.
+                  clicked: pendingSelection.clicked,
+                  anchor: pendingSelection.anchor || null,
+                  ancestry: Array.isArray(pendingSelection.ancestry) ? pendingSelection.ancestry : [],
+                }
+              : {
+                  // React's debugStack path (19+) - not resolved yet at queue time. These raw
+                  // fields (react-fiber-inspector.js's resolveClickTarget) let
+                  // resolveReactComponentTarget do the sourcemap round trip server-side and
+                  // produce clicked/anchor itself once the item is actually sent. Must be
+                  // forwarded exactly as received - dropping any of these silently breaks that
+                  // resolution, the exact bug class fallbackCandidates and
+                  // vendorSource/vendorPackage both hit earlier in this project's history.
+                  componentName: pendingSelection.componentName || "",
+                  transformedUrl: pendingSelection.transformedUrl || "",
+                  transformedLine: pendingSelection.transformedLine || 0,
+                  transformedColumn: pendingSelection.transformedColumn || 0,
+                  ...(Array.isArray(pendingSelection.fallbackCandidates)
+                    ? { fallbackCandidates: pendingSelection.fallbackCandidates }
+                    : {}),
+                  ancestry: Array.isArray(pendingSelection.ancestry) ? pendingSelection.ancestry : [],
+                }),
           }
         : null;
     queue.push({
@@ -280,9 +311,13 @@ window.addEventListener("message", (event) => {
 // ---------------------------------------------------------------------------
 
 /**
- * @typedef {{ type: string, selector: string, componentName: string, resolution: string,
- *   fileName: string, lineNumber: number, columnNumber: number, transformedUrl: string,
- *   transformedLine: number, transformedColumn: number }} QueueItemTarget
+ * @typedef {{ componentName: string | null, fileName: string, lineNumber: number | null,
+ *   columnNumber: number | null, vendor?: boolean, vendorPackage?: string, note?: string,
+ *   unresolved?: boolean }} QueueItemLocation
+ * @typedef {{ type: string, selector: string, resolution: string, clicked?: QueueItemLocation,
+ *   anchor?: QueueItemLocation | null, ancestry?: string[], componentName?: string,
+ *   transformedUrl?: string, transformedLine?: number, transformedColumn?: number,
+ *   fallbackCandidates?: unknown[] }} QueueItemTarget
  * @typedef {{ top: number, left: number, right: number, bottom: number, width: number, height: number }} QueueItemRect
  * @type {{ id: string, kind: string, text: string, target: QueueItemTarget | null, rect: QueueItemRect | null, label: string }[]}
  */
