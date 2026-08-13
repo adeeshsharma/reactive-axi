@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.5](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.4...reactive-axi-v0.0.5) (2026-08-13)
+
+
+### Features
+
+* redesign click-to-source targets around clicked/anchor/ancestry, fix vendor-source resolution and Next.js/CRA gaps ([#6](https://github.com/adeeshsharma/reactive-axi/issues/6)) ([ac9205a](https://github.com/adeeshsharma/reactive-axi/commit/ac9205a89b58ec0aea5248b202e4ff11a4c059ef))
+
 ## [0.0.4](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.3...reactive-axi-v0.0.4) (2026-08-10)
 
 
