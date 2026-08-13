@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/vue-vendor-ui-kit",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A small, real, un-precompiled compound-component library (raw .vue SFC source, no build step) - stands in for a monorepo-local design-system package consumed by fixtures/vue-3 via workspace:*, used to prove click-to-source resolves past a symlinked local dependency to the app's own usage site, not the library's internals.",
+  "main": "./src/index.js",
+  "peerDependencies": {
+    "vue": "^3.5.40"
+  }
+}

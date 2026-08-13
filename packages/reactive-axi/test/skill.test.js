@@ -106,20 +106,29 @@ test("createSkillMarkdown requires an observable wake path for every poll", () =
   assert.match(workflow, /(?:do|must) not reopen the session uninvited/i);
 });
 
-test("createSkillMarkdown explains the unresolved-target fallback for Next.js App Router Server Components", () => {
+test("createSkillMarkdown explains the clicked.unresolved fallback for Next.js App Router Server Components", () => {
   // The one genuinely non-obvious technical caveat an agent needs to know before it can
   // correctly act on a prompt whose target has no fileName/lineNumber.
   const md = createSkillMarkdown();
-  assert.match(md, /"unresolved":\s*true/);
+  assert.match(md, /clicked\.unresolved:\s*true/);
   assert.match(md, /Server Component/);
   assert.match(md, /selector.*route/i);
 });
 
-test("createSkillMarkdown explains the lineUnresolved fallback for Vue targets (real fileName, no exact line)", () => {
+test("createSkillMarkdown explains the clicked.lineNumber:null fallback for Vue targets (real fileName, no exact line)", () => {
   const md = createSkillMarkdown();
-  assert.match(md, /"lineUnresolved":\s*true/);
+  assert.match(md, /clicked\.lineNumber.*null/);
   assert.match(md, /Vue/);
   assert.match(md, /fileName.*componentName/);
+});
+
+test("createSkillMarkdown explains clicked/anchor/ancestry and the vendor note", () => {
+  const md = createSkillMarkdown();
+  assert.match(md, /`clicked`/);
+  assert.match(md, /`anchor`/);
+  assert.match(md, /`ancestry`/);
+  assert.match(md, /clicked\.vendor:\s*true/);
+  assert.match(md, /clicked\.note/);
 });
 
 test("createSkillMarkdown mentions automatic framework and installed-version detection, across React, Vue, and Svelte", () => {

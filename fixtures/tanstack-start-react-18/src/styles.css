@@ -1,5 +1,3 @@
-
-
 * {
   box-sizing: border-box;
 }
@@ -7,6 +5,10 @@
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #111827;
+  background: radial-gradient(circle at top, #f8fafc, #eef2ff 70%);
+  min-height: 100vh;
 }
 
 main {
@@ -14,3 +16,132 @@ main {
   margin: 4rem auto;
 }
 
+.hero {
+  padding: 3rem 2rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0f172a, #1e293b 55%, #312e81);
+  color: #f9fafb;
+  margin-bottom: 2rem;
+  box-shadow: 0 20px 40px -20px rgba(49, 46, 129, 0.5);
+}
+
+.hero .badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(129, 140, 248, 0.2);
+  color: #c7d2fe;
+  margin-bottom: 1rem;
+}
+
+.hero h1 {
+  margin: 0 0 0.6rem;
+  font-size: 2.25rem;
+  letter-spacing: -0.02em;
+}
+
+.hero p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 1.05rem;
+}
+
+.hero code {
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+.card {
+  padding: 1.75rem 2rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px -18px rgba(15, 23, 42, 0.35);
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+.card > p {
+  color: #475569;
+}
+
+.accordion {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 1rem 0;
+}
+
+.accordion-trigger {
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  background: #f8fafc;
+  border: none;
+  border-bottom: 1px solid #e2e8f0;
+  font: inherit;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.accordion-trigger:hover {
+  background: #eef2ff;
+}
+
+.accordion-content {
+  padding: 0.85rem 1rem;
+  color: #475569;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: none;
+  background: #312e81;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #3730a3;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #312e81;
+  border: 1px solid #c7d2fe;
+  margin-top: 1rem;
+}
+
+.btn-ghost:hover {
+  background: #eef2ff;
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(24rem, calc(100% - 2rem));
+  padding: 1.75rem;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.4);
+}

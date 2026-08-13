@@ -27,6 +27,105 @@ export function getSvelteMetaForNode(node) {
   return node.__svelte_meta || null;
 }
 
+// Cheap, client-side-only heuristic: does this path look like it's under node_modules? See
+// react-fiber-inspector.js's own copy of this exact function for the full reasoning. Confirmed
+// real against a live `bits-ui` click: `__svelte_meta.loc.file` for a vendor component is a
+// real, relative, node_modules-rooted path (e.g. `node_modules/bits-ui/dist/bits/accordion/
+// components/accordion-trigger.svelte`), not an absolute one - the check matches either shape.
+export function looksLikeVendorPath(candidatePath) {
+  return /(^|[\\/])node_modules[\\/]/.test(String(candidatePath || ""));
+}
+
+// Best-effort package name from an already-known-vendor path - see react-fiber-inspector.js's
+// identical copy for the full reasoning.
+export function extractVendorPackageName(candidatePath) {
+  // The LAST node_modules/<pkg> segment, not the first - see react-fiber-inspector.js's
+  // identical copy for the full reasoning (pnpm's node_modules/.pnpm/<pkg>/node_modules/<pkg>
+  // nesting means the first segment is always the literal ".pnpm" directory).
+  const matches = [...String(candidatePath || "").matchAll(/node_modules[\\/](@[^\\/]+[\\/][^\\/]+|[^\\/]+)/g)];
+  return matches.length ? matches[matches.length - 1][1] : undefined;
+}
+
+/**
+ * Walks up from the clicked element's own DOM ancestry (Svelte has no component-ownership
+ * chain to walk the way React/Vue do - only physical DOM nesting, confirmed real by the spike),
+ * producing the same clicked/anchor/ancestry shape as react-fiber-inspector.js's
+ * collectDebugSourceChain / vue-inspector.js's collectVueInstanceChain, adapted to what Svelte
+ * actually exposes:
+ *  - `clicked` - the first DOM node (starting at the literal clicked element) carrying
+ *    `__svelte_meta.loc`, resolved to its own real location regardless of vendor status.
+ *    `componentName` is always null here - Svelte's metadata identifies a source *file*, not a
+ *    named component instance, so there's no display name to report; the file itself is the
+ *    identity (left null rather than guessing one from the file path).
+ *  - `anchor` - the first LATER ancestor carrying a *different* fileName than `clicked`'s, and
+ *    non-vendor. Real, accepted, honest limitation, not an oversight: a library component whose
+ *    root DOM element *is* the clicked element, with no app-authored DOM wrapper above it,
+ *    cannot resolve an anchor past the vendor location by this technique (confirmed live:
+ *    bits-ui's Accordion with no app wrapper around it exhausts every Svelte-compiled ancestor
+ *    without finding an app-level one) - `anchor` stays `null` in that case, same as the other
+ *    two frameworks' all-vendor case.
+ *  - `ancestry` - distinct **file basenames** encountered while climbing (adjacent-deduplicated),
+ *    not component display names like React/Vue's ancestry - Svelte has no per-instance name to
+ *    report, and a `.svelte` file is the closest real equivalent of "component identity" this
+ *    framework exposes. Basename only (e.g. `"AccordionTrigger.svelte"`), not the full path -
+ *    full paths (still available on `clicked`/`anchor`) can run well past 200 characters under
+ *    pnpm's `.pnpm` virtual store, which session-store.js's normalizeAncestry would otherwise
+ *    truncate into unreadable garbage; ancestry only needs to be a scannable identifier. This
+ *    also means Svelte's ancestry reflects DOM nesting, not component nesting: a plain wrapper
+ *    `<div>` with no Svelte compile boundary of its own contributes no entry, and only genuine
+ *    `.svelte`-file boundaries appear.
+ * @param {Element} el
+ * @param {boolean} zeroIndexedLines true for Svelte 4 (confirmed via spike), false for Svelte
+ *   5+ - see resolveClickTarget's own param doc for why this stays an injected parameter.
+ */
+export function collectSvelteAncestryChain(el, zeroIndexedLines) {
+  const offset = zeroIndexedLines ? 1 : 0;
+  const ancestry = [];
+  let clicked = null;
+  let clickedNode = null;
+  let anchor = null;
+  let lastFile = null;
+  let domNode = el;
+  while (domNode) {
+    const meta = getSvelteMetaForNode(domNode);
+    if (meta && meta.loc) {
+      const fileName = meta.loc.file || "";
+      const lineNumber = (meta.loc.line || 0) + offset;
+      const columnNumber = (meta.loc.column || 0) + offset;
+      if (fileName && fileName !== lastFile) {
+        // Basename only, not the full path - a real, confirmed-live gap: pnpm's `.pnpm` virtual
+        // store produces absolute vendor paths well over 200 characters (content-hash directory
+        // names), which session-store.js's normalizeAncestry truncates to 200 chars, cutting a
+        // long path off mid-word into garbage. ancestry entries only need to be a scannable
+        // identifier (matching React/Vue's short componentName convention) - the full path is
+        // still available, untouched, on `clicked`/`anchor` for actually locating the file.
+        const baseName = fileName.split(/[\\/]/).pop() || fileName;
+        ancestry.push(baseName);
+        lastFile = fileName;
+      }
+      const vendor = looksLikeVendorPath(fileName);
+      if (!clicked) {
+        clicked = vendor
+          ? {
+              componentName: null,
+              fileName,
+              lineNumber,
+              columnNumber,
+              vendor: true,
+              vendorPackage: extractVendorPackageName(fileName),
+            }
+          : { componentName: null, fileName, lineNumber, columnNumber, vendor: false };
+        clickedNode = domNode;
+      } else if (!vendor && fileName && fileName !== clicked.fileName) {
+        anchor = { componentName: null, fileName, lineNumber, columnNumber };
+        break;
+      }
+    }
+    domNode = domNode.parentElement;
+  }
+  return { clicked, clickedNode, anchor, ancestry };
+}
+
 /**
  * @param {number} x
  * @param {number} y
@@ -42,29 +141,11 @@ export function resolveClickTarget(x, y, doc = document, zeroIndexedLines = fals
   const el = doc.elementFromPoint(x, y);
   if (!el) return { error: "no element at point" };
 
-  const offset = zeroIndexedLines ? 1 : 0;
-  let domNode = el;
-  while (domNode) {
-    const meta = getSvelteMetaForNode(domNode);
-    if (meta && meta.loc) {
-      const selector = buildSelector(el);
-      const rect = rectToPlainObject(domNode.getBoundingClientRect());
-      return {
-        resolution: "svelte-component",
-        selector,
-        // Svelte's metadata identifies a source location, not a named component instance the
-        // way React/Vue's fiber/instance trees do - there's no componentName to report here,
-        // the file itself is the identity. Left null rather than guessing from the file path.
-        componentName: null,
-        fileName: meta.loc.file || "",
-        lineNumber: (meta.loc.line || 0) + offset,
-        columnNumber: (meta.loc.column || 0) + offset,
-        rect,
-      };
-    }
-    domNode = domNode.parentElement;
-  }
-  return { error: "no Svelte source metadata found from clicked element up to <html>" };
+  const { clicked, clickedNode, anchor, ancestry } = collectSvelteAncestryChain(el, zeroIndexedLines);
+  if (!clicked) return { error: "no Svelte source metadata found from clicked element up to <html>" };
+  const selector = buildSelector(clickedNode);
+  const rect = rectToPlainObject(clickedNode.getBoundingClientRect());
+  return { resolution: "svelte-component", selector, clicked, anchor, ancestry, rect };
 }
 
 // Duplicated, not imported, from react-fiber-inspector.js - see vue-inspector.js's identical

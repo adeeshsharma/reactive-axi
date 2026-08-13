@@ -61,7 +61,7 @@ test("createSdkJs's click handler works end-to-end for the vue branch - the real
   assert.doesNotThrow(() => simulateClick(listeners, sandbox, target));
   assert.equal(posted[0]?.type, "reactive-axi:selection");
   assert.equal(posted[0]?.result?.resolution, "vue-component");
-  assert.equal(posted[0]?.result?.componentName, "HelloWorld");
+  assert.equal(posted[0]?.result?.clicked?.componentName, "HelloWorld");
 });
 
 test("createSdkJs's click handler works end-to-end for the svelte branch (major version 4, index-adjusted)", () => {
@@ -74,7 +74,7 @@ test("createSdkJs's click handler works end-to-end for the svelte branch (major 
   };
   assert.doesNotThrow(() => simulateClick(listeners, sandbox, target));
   assert.equal(posted[0]?.result?.resolution, "svelte-component");
-  assert.equal(posted[0]?.result?.lineNumber, 5); // 0-indexed raw 4 -> 1-indexed 5
+  assert.equal(posted[0]?.result?.clicked?.lineNumber, 5); // 0-indexed raw 4 -> 1-indexed 5
 });
 
 test("createSdkJs's click handler works end-to-end for the svelte branch (major version 5, unadjusted)", () => {
@@ -86,7 +86,7 @@ test("createSdkJs's click handler works end-to-end for the svelte branch (major 
     __svelte_meta: { loc: { file: "src/lib/Counter.svelte", line: 5, column: 0 } },
   };
   assert.doesNotThrow(() => simulateClick(listeners, sandbox, target));
-  assert.equal(posted[0]?.result?.lineNumber, 5); // already 1-indexed, unchanged
+  assert.equal(posted[0]?.result?.clicked?.lineNumber, 5); // already 1-indexed, unchanged
 });
 
 test("createSdkJs falls back to the React branch when no session/framework is given", () => {

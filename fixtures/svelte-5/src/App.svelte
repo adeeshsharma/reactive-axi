@@ -3,6 +3,7 @@
   import viteLogo from './assets/vite.svg'
   import heroImg from './assets/hero.png'
   import Counter from './lib/Counter.svelte'
+  import { Accordion, Dialog } from 'bits-ui'
 </script>
 
 <section id="center">
@@ -86,4 +87,46 @@
 </section>
 
 <div class="ticks"></div>
+
+<section id="vendor-components">
+  <h2>bits-ui Accordion &amp; Dialog examples</h2>
+  <p>
+    Rendered by a real npm dependency (<code>bits-ui</code>), not application
+    code — used to verify click-to-source resolves here, not into the
+    library's own internals.
+  </p>
+  <Accordion.Root type="single">
+    <Accordion.Item value="item-1">
+      <Accordion.Header>
+        <Accordion.Trigger id="vendor-accordion-trigger">
+          Vendor accordion trigger
+        </Accordion.Trigger>
+      </Accordion.Header>
+      <Accordion.Content id="vendor-accordion-content">
+        Vendor accordion content
+      </Accordion.Content>
+    </Accordion.Item>
+  </Accordion.Root>
+  <Dialog.Root>
+    <Dialog.Trigger id="vendor-dialog-trigger">Open vendor dialog</Dialog.Trigger>
+    <Dialog.Portal>
+      <Dialog.Overlay />
+      <Dialog.Content id="vendor-dialog-content">
+        <Dialog.Title>Vendor dialog</Dialog.Title>
+        <Dialog.Description>
+          Rendered by bits-ui, portaled to document.body.
+        </Dialog.Description>
+        <Dialog.Close id="vendor-dialog-close">Close</Dialog.Close>
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>
+</section>
+
 <section id="spacer"></section>
+
+<style>
+  #vendor-components {
+    margin-top: 3rem;
+    padding-bottom: 2rem;
+  }
+</style>

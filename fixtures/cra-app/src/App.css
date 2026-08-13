@@ -36,3 +36,36 @@
     transform: rotate(360deg);
   }
 }
+
+#vendor-components {
+  background-color: #282c34;
+  color: white;
+  padding: 3rem calc(10px + 2vmin);
+  font-size: calc(10px + 1vmin);
+}
+
+#vendor-components h2 {
+  margin-top: 0;
+}
+
+#vendor-components p {
+  color: #a0a8b4;
+}
+
+#vendor-components code {
+  color: #61dafb;
+}
+
+#vendor-components button {
+  background: none;
+  border: 1px solid #61dafb;
+  border-radius: 6px;
+  color: #61dafb;
+  font: inherit;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+#vendor-components button:hover {
+  background: rgba(97, 218, 251, 0.1);
+}

@@ -13,3 +13,7 @@ allowBuilds:
   core-js-pure: false
   esbuild: true
   unrs-resolver: false
+  # vue-demi's postinstall just detects which vue major version is present to pick an internal
+  # shim - reka-ui's transitive dep, harmless to skip (same reasoning as core-js/unrs-resolver
+  # above), and required here so this never blocks pnpm's automatic deps-sync check.
+  vue-demi: false

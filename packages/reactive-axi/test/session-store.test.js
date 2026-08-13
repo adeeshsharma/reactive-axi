@@ -245,13 +245,12 @@ test("setRoute stores and truncates the current client-side route", async () => 
   });
 });
 
-test("normalizeReactComponentTarget strips unknown fields to a fixed shape", () => {
+test("normalizeReactComponentTarget strips unknown fields to a fixed clicked/anchor/ancestry shape", () => {
   const normalized = normalizeReactComponentTarget({
     type: "react-component",
-    fileName: "/repo/src/App.jsx",
-    lineNumber: "24",
-    columnNumber: 9,
-    componentName: "App",
+    clicked: { componentName: "App", fileName: "/repo/src/App.jsx", lineNumber: "24", columnNumber: 9, vendor: false },
+    anchor: null,
+    ancestry: ["App"],
     selector: "button.counter",
     route: "/",
     resolution: "debugStack",
@@ -260,79 +259,136 @@ test("normalizeReactComponentTarget strips unknown fields to a fixed shape", () 
   });
   assert.deepEqual(normalized, {
     type: "react-component",
-    fileName: "/repo/src/App.jsx",
-    lineNumber: 24,
-    columnNumber: 9,
-    componentName: "App",
     selector: "button.counter",
     route: "/",
     resolution: "debugStack",
+    clicked: { componentName: "App", fileName: "/repo/src/App.jsx", lineNumber: 24, columnNumber: 9, vendor: false },
+    anchor: null,
+    ancestry: ["App"],
   });
 });
 
-test("normalizeReactComponentTarget carries unresolved:true through when set, omits it entirely otherwise", () => {
+test("normalizeReactComponentTarget carries clicked.unresolved:true through when set, omits it entirely otherwise", () => {
   const unresolved = normalizeReactComponentTarget({
     type: "react-component",
-    fileName: "",
+    clicked: { componentName: null, fileName: "", unresolved: true },
     selector: "h1 > code",
     route: "/",
     resolution: "debugStack",
-    unresolved: true,
   });
-  assert.equal(unresolved.unresolved, true);
+  assert.equal(unresolved.clicked.unresolved, true);
 
   const resolved = normalizeReactComponentTarget({
     type: "react-component",
-    fileName: "App.jsx",
-    lineNumber: 1,
-    columnNumber: 1,
+    clicked: { componentName: "App", fileName: "App.jsx", lineNumber: 1, columnNumber: 1, vendor: false },
     resolution: "debugSource",
   });
-  assert.equal("unresolved" in resolved, false);
+  assert.equal("unresolved" in resolved.clicked, false);
 });
 
-test("normalizeReactComponentTarget defaults invalid line/column to 0 and unknown resolution to debugSource", () => {
-  const normalized = normalizeReactComponentTarget({ fileName: "App.jsx", lineNumber: "not-a-number" });
-  assert.equal(normalized.lineNumber, 0);
-  assert.equal(normalized.columnNumber, 0);
+test("normalizeReactComponentTarget attaches a vendor note to clicked when vendor:true, varying by whether an anchor was found", () => {
+  // Cast needed: `clicked`'s real type is a discriminated union (unresolved | vendor:false |
+  // vendor:true) - these tests deliberately poke at the vendor-only vendorPackage/note fields
+  // based on runtime knowledge of which branch the test input produces.
+  const withAnchor = /** @type {any} */ (
+    normalizeReactComponentTarget({
+      type: "react-component",
+      clicked: {
+        componentName: "Primitive.button",
+        fileName: "/repo/node_modules/@radix-ui/react-accordion/dist/index.mjs",
+        lineNumber: 1004,
+        columnNumber: 53,
+        vendor: true,
+        vendorPackage: "@radix-ui/react-accordion",
+      },
+      anchor: { componentName: "App", fileName: "/repo/src/App.jsx", lineNumber: 42, columnNumber: 5 },
+      resolution: "debugStack",
+    })
+  );
+  assert.equal(withAnchor.clicked.vendor, true);
+  assert.equal(withAnchor.clicked.vendorPackage, "@radix-ui/react-accordion");
+  assert.match(withAnchor.clicked.note, /do not edit that file/);
+  assert.match(withAnchor.clicked.note, /see "anchor"/);
+
+  const withoutAnchor = /** @type {any} */ (
+    normalizeReactComponentTarget({
+      type: "react-component",
+      clicked: {
+        componentName: "Button",
+        fileName: "/repo/node_modules/some-lib/Button.jsx",
+        lineNumber: 10,
+        columnNumber: 3,
+        vendor: true,
+        vendorPackage: "some-lib",
+      },
+      anchor: null,
+      resolution: "debugStack",
+    })
+  );
+  assert.match(withoutAnchor.clicked.note, /could not be located automatically/);
+});
+
+test("normalizeReactComponentTarget defaults invalid line/column to null and unknown resolution to debugSource", () => {
+  const normalized = normalizeReactComponentTarget({
+    clicked: { fileName: "App.jsx", lineNumber: "not-a-number", vendor: false },
+  });
+  assert.equal(normalized.clicked.lineNumber, null);
+  assert.equal(normalized.clicked.columnNumber, null);
   assert.equal(normalized.resolution, "debugSource");
 });
 
-test("normalizeVueComponentTarget strips unknown fields and sets lineUnresolved:true when there's no line", () => {
+test("normalizeVueComponentTarget strips unknown fields to the clicked/anchor/ancestry shape, real null line/column preserved (not guessed)", () => {
   const normalized = normalizeVueComponentTarget({
     type: "vue-component",
-    fileName: "/repo/src/components/HelloWorld.vue",
-    componentName: "HelloWorld",
+    clicked: {
+      componentName: "HelloWorld",
+      fileName: "/repo/src/components/HelloWorld.vue",
+      lineNumber: null,
+      columnNumber: null,
+      vendor: false,
+    },
+    anchor: null,
+    ancestry: ["HelloWorld"],
     selector: "button",
     route: "/",
-    lineNumber: null,
     __proto__: { polluted: true },
     extra: "should be dropped",
   });
   assert.deepEqual(normalized, {
     type: "vue-component",
-    fileName: "/repo/src/components/HelloWorld.vue",
-    lineNumber: 0,
-    columnNumber: 0,
-    componentName: "HelloWorld",
     selector: "button",
     route: "/",
-    lineUnresolved: true,
+    clicked: {
+      componentName: "HelloWorld",
+      fileName: "/repo/src/components/HelloWorld.vue",
+      lineNumber: null,
+      columnNumber: null,
+      vendor: false,
+    },
+    anchor: null,
+    ancestry: ["HelloWorld"],
   });
 });
 
-test("normalizeVueComponentTarget omits lineUnresolved when a real line is present (e.g. once vite-plugin-vue-inspector is detected in future work)", () => {
-  const normalized = normalizeVueComponentTarget({ fileName: "App.vue", lineNumber: 12, componentName: "App" });
-  assert.equal("lineUnresolved" in normalized, false);
-  assert.equal(normalized.lineNumber, 12);
+test("normalizeVueComponentTarget preserves a real resolved line when present (e.g. once vite-plugin-vue-inspector is detected in future work)", () => {
+  const normalized = normalizeVueComponentTarget({
+    clicked: { fileName: "App.vue", lineNumber: 12, componentName: "App", vendor: false },
+  });
+  assert.equal(normalized.clicked.lineNumber, 12);
 });
 
-test("normalizeSvelteComponentTarget strips unknown fields to a fixed shape, no componentName/unresolved fields at all", () => {
+test("normalizeSvelteComponentTarget strips unknown fields to the clicked/anchor/ancestry shape, componentName always null", () => {
   const normalized = normalizeSvelteComponentTarget({
     type: "svelte-component",
-    fileName: "src/lib/Counter.svelte",
-    lineNumber: 5,
-    columnNumber: 0,
+    clicked: {
+      componentName: null,
+      fileName: "src/lib/Counter.svelte",
+      lineNumber: 5,
+      columnNumber: 0,
+      vendor: false,
+    },
+    anchor: null,
+    ancestry: ["src/lib/Counter.svelte"],
     selector: "button.counter",
     route: "/",
     __proto__: { polluted: true },
@@ -340,11 +396,17 @@ test("normalizeSvelteComponentTarget strips unknown fields to a fixed shape, no 
   });
   assert.deepEqual(normalized, {
     type: "svelte-component",
-    fileName: "src/lib/Counter.svelte",
-    lineNumber: 5,
-    columnNumber: 0,
     selector: "button.counter",
     route: "/",
+    clicked: {
+      componentName: null,
+      fileName: "src/lib/Counter.svelte",
+      lineNumber: 5,
+      columnNumber: 0,
+      vendor: false,
+    },
+    anchor: null,
+    ancestry: ["src/lib/Counter.svelte"],
   });
 });
 
@@ -357,13 +419,16 @@ test("queuePrompts normalizes a vue-component target through the same path", asy
         {
           prompt: "make bigger",
           tag: "message",
-          target: { type: "vue-component", fileName: "HelloWorld.vue", componentName: "HelloWorld", lineNumber: null },
+          target: {
+            type: "vue-component",
+            clicked: { fileName: "HelloWorld.vue", componentName: "HelloWorld", lineNumber: null, vendor: false },
+          },
         },
       ],
     });
     assert.equal(updated.prompts[0].target.type, "vue-component");
-    assert.equal(updated.prompts[0].target.fileName, "HelloWorld.vue");
-    assert.equal(updated.prompts[0].target.lineUnresolved, true);
+    assert.equal(updated.prompts[0].target.clicked.fileName, "HelloWorld.vue");
+    assert.equal(updated.prompts[0].target.clicked.lineNumber, null);
   });
 });
 
@@ -376,13 +441,16 @@ test("queuePrompts normalizes a svelte-component target through the same path", 
         {
           prompt: "make bigger",
           tag: "message",
-          target: { type: "svelte-component", fileName: "Counter.svelte", lineNumber: 5, columnNumber: 0 },
+          target: {
+            type: "svelte-component",
+            clicked: { fileName: "Counter.svelte", lineNumber: 5, columnNumber: 0, vendor: false },
+          },
         },
       ],
     });
     assert.equal(updated.prompts[0].target.type, "svelte-component");
-    assert.equal(updated.prompts[0].target.fileName, "Counter.svelte");
-    assert.equal(updated.prompts[0].target.lineNumber, 5);
+    assert.equal(updated.prompts[0].target.clicked.fileName, "Counter.svelte");
+    assert.equal(updated.prompts[0].target.clicked.lineNumber, 5);
   });
 });
 
@@ -395,12 +463,15 @@ test("queuePrompts normalizes a react-component target through the same path", a
         {
           prompt: "make bigger",
           tag: "message",
-          target: { type: "react-component", fileName: "App.jsx", lineNumber: 24, componentName: "App" },
+          target: {
+            type: "react-component",
+            clicked: { fileName: "App.jsx", lineNumber: 24, componentName: "App", vendor: false },
+          },
         },
       ],
     });
     assert.equal(updated.prompts[0].target.type, "react-component");
-    assert.equal(updated.prompts[0].target.fileName, "App.jsx");
-    assert.equal(updated.prompts[0].target.lineNumber, 24);
+    assert.equal(updated.prompts[0].target.clicked.fileName, "App.jsx");
+    assert.equal(updated.prompts[0].target.clicked.lineNumber, 24);
   });
 });
