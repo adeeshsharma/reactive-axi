@@ -60,6 +60,15 @@ export function devServerLogFile(sessionKeyValue) {
   return path.join(stateDir(), "dev-servers", `${sessionKeyValue}.log`);
 }
 
+// Per-session attachment images uploaded via POST /api/:key/attachments (see
+// attachments.js). `baseDir` is the caller's own state-dir root, not always
+// the global stateDir() - SessionStore derives it from wherever its own state
+// file lives, so tests pointed at a temp dir never touch a real user's
+// ~/.reactive-axi.
+export function attachmentsDir(baseDir, sessionKeyValue) {
+  return path.join(baseDir, "attachments", sessionKeyValue);
+}
+
 export async function ensureStateDir() {
   await mkdir(stateDir(), { recursive: true });
 }

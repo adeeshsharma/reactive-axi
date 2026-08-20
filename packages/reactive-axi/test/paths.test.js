@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import {
+  attachmentsDir,
   bindHost,
   clientHost,
   defaultPort,
@@ -58,4 +60,8 @@ test("findFreePort returns a real, distinct, listenable port each call", async (
   assert.ok(Number.isInteger(a) && a > 0);
   assert.ok(Number.isInteger(b) && b > 0);
   assert.notEqual(a, b);
+});
+
+test("attachmentsDir joins the base dir, 'attachments', and the session key", () => {
+  assert.equal(attachmentsDir("/tmp/state", "abc123"), path.join("/tmp/state", "attachments", "abc123"));
 });
