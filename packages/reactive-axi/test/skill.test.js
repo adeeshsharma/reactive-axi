@@ -106,6 +106,15 @@ test("createSkillMarkdown requires an observable wake path for every poll", () =
   assert.match(workflow, /(?:do|must) not reopen the session uninvited/i);
 });
 
+test("createSkillMarkdown documents the attachments field on a prompt", () => {
+  const md = createSkillMarkdown();
+  const workflow = md.slice(md.indexOf("## Workflow"), md.indexOf("## Commands & rules"));
+
+  assert.match(workflow, /`attachments`/);
+  assert.match(workflow, /absolute `path` to an image file/);
+  assert.match(workflow, /read it directly with the Read tool/i);
+});
+
 test("createSkillMarkdown explains the clicked.unresolved fallback for Next.js App Router Server Components", () => {
   // The one genuinely non-obvious technical caveat an agent needs to know before it can
   // correctly act on a prompt whose target has no fileName/lineNumber.
