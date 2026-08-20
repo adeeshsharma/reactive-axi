@@ -6,9 +6,11 @@ import launchEditorMiddleware from "launch-editor-middleware";
 
 const chromeClientUrl = new URL("./chrome-client.js", import.meta.url);
 
+import { saveAttachment } from "./attachments.js";
 import { createDevServerManager } from "./dev-server-manager.js";
 import { injectSdk } from "./html-transform.js";
 import {
+  attachmentsDir,
   bindHost,
   extraAllowedHosts,
   findFreePort,
@@ -284,6 +286,29 @@ export async function serve({
       }
       res.json({ status: "queued", pending_prompts: session.pending_prompts });
       if (shouldEndSession) await shutdownIfNoLiveSessions();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/:key/attachments", express.raw({ type: "image/*", limit: "10mb" }), async (req, res, next) => {
+    try {
+      const session = await store.findByKey(req.params.key);
+      if (!session) {
+        res.status(404).json({ error: "session not found" });
+        return;
+      }
+      const buffer = Buffer.isBuffer(req.body) ? req.body : null;
+      if (!buffer || buffer.length === 0) {
+        res.status(400).json({ error: "empty body" });
+        return;
+      }
+      const saved = await saveAttachment({ buffer, dir: attachmentsDir(store.attachmentsRoot, req.params.key) });
+      if (!saved) {
+        res.status(415).json({ error: "unsupported image type" });
+        return;
+      }
+      res.json(saved);
     } catch (error) {
       next(error);
     }
