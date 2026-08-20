@@ -14,3 +14,13 @@ memory-bank/
 docs/
 AGENTS.md
 CLAUDE.md
+
+# graphify knowledge-graph output - fully regenerable (`graphify --update` or the post-commit/
+# post-checkout hooks below rebuild it), includes a raw extraction cache that should never be
+# tracked, and would otherwise dirty every commit with a self-generated diff.
+graphify-out/
+
+# Local Claude Code settings - .claude/settings.json currently hardcodes this machine's absolute
+# graphify path, so it isn't portable to other contributors/machines as-is.
+.claude/
+.gitattributes
