@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { attachmentsDir } from "./paths.js";
 
 // One JSON state file, read-modify-write on every mutation, serialized through an in-process
 // promise chain (no external locking - correct because this is one local process talking to
@@ -18,10 +20,22 @@ const REACT_TARGET_TYPE = "react-component";
 const VUE_TARGET_TYPE = "vue-component";
 const SVELTE_TARGET_TYPE = "svelte-component";
 const MAX_TEXT_LEN = 4000;
+const MAX_ATTACHMENTS = 6;
+const ATTACHMENT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 export class SessionStore {
-  constructor(file) {
+  /**
+   * @param {string} file
+   * @param {{ attachmentsRoot?: string }} [options]
+   */
+  constructor(file, { attachmentsRoot } = {}) {
     this.file = file;
+    // Defaults to the directory the state file itself lives in - in production
+    // that's stateDir() (state.json's parent), so the upload route (server.js)
+    // and this store agree on the same attachments layout with no separate
+    // config. A test pointed at a temp state file gets a temp attachments root
+    // for free, the same way SessionStore already isolates state.json itself.
+    this.attachmentsRoot = attachmentsRoot || path.dirname(file);
     /** @type {Promise<unknown>} */
     this.stateOperationQueue = Promise.resolve();
   }
@@ -142,11 +156,20 @@ export class SessionStore {
       const prompts = Array.isArray(payload.prompts) ? payload.prompts : [];
       const shouldEndSession = Boolean(payload.endSession || payload.end_session);
       const alreadyEnded = session.status === "ended";
-      const normalizedPrompts = prompts.map(normalizePrompt);
+      const allowedAttachmentsDir = attachmentsDir(this.attachmentsRoot, key);
+      const normalizedPrompts = prompts.map((prompt) => normalizePrompt(prompt, allowedAttachmentsDir));
       session.prompts = [...(session.prompts || []), ...normalizedPrompts];
       const userMessages = normalizedPrompts
-        .filter((prompt) => prompt.tag === "message" && prompt.prompt)
-        .map((prompt) => ({ role: "user", text: prompt.prompt, at: new Date().toISOString() }));
+        .filter(
+          (prompt) =>
+            prompt.tag === "message" && (prompt.prompt || (prompt.attachments && prompt.attachments.length > 0)),
+        )
+        .map((prompt) => ({
+          role: "user",
+          text: prompt.prompt,
+          at: new Date().toISOString(),
+          ...(prompt.attachments && prompt.attachments.length > 0 ? { attachments: prompt.attachments } : {}),
+        }));
       session.chat = [...(session.chat || []), ...userMessages];
       session.pending_prompts = session.prompts.length;
       session.dom_snapshot = String(payload.domSnapshot || payload.dom_snapshot || session.dom_snapshot || "");
@@ -200,6 +223,9 @@ export class SessionStore {
       session.ended_by = nextEndedBy;
       session.updated_at = new Date().toISOString();
       await this.writeState(state);
+      // Best-effort - a cleanup failure (e.g. a permissions error) must never
+      // block ending the session itself.
+      await rm(attachmentsDir(this.attachmentsRoot, key), { recursive: true, force: true }).catch(() => {});
       return session;
     });
   }
@@ -266,7 +292,22 @@ function normalizePromptKind(kind) {
   return PROMPT_KINDS.has(value) ? value : "change";
 }
 
-function normalizePrompt(prompt) {
+function normalizeAttachment(attachment, allowedDir) {
+  if (!attachment || typeof attachment !== "object") return null;
+  const id = String(attachment.id || "");
+  const mime = String(attachment.mime || "");
+  const filePath = String(attachment.path || "");
+  if (!id || !mime || !filePath || !ATTACHMENT_MIME_TYPES.has(mime)) return null;
+  // Never trust the client's path string at face value, even though it
+  // normally just echoes what POST /api/:key/attachments returned a moment
+  // earlier - reject anything that doesn't resolve to a direct child of this
+  // session's own attachments directory.
+  const resolved = path.resolve(filePath);
+  if (path.dirname(resolved) !== path.resolve(allowedDir)) return null;
+  return { id, path: resolved, mime };
+}
+
+function normalizePrompt(prompt, allowedAttachmentsDir) {
   const normalized = {
     uid: String(prompt.uid || ""),
     prompt: String(prompt.prompt || "").slice(0, MAX_TEXT_LEN),
@@ -277,6 +318,13 @@ function normalizePrompt(prompt) {
   };
   const target = normalizeTarget(prompt.target);
   if (target) normalized.target = target;
+  const attachments = Array.isArray(prompt.attachments)
+    ? prompt.attachments
+        .slice(0, MAX_ATTACHMENTS)
+        .map((attachment) => normalizeAttachment(attachment, allowedAttachmentsDir))
+        .filter(Boolean)
+    : [];
+  if (attachments.length > 0) normalized.attachments = attachments;
   return normalized;
 }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,6 +12,7 @@ import {
   SessionStore,
   sessionKey,
 } from "../src/session-store.js";
+import { attachmentsDir } from "../src/paths.js";
 
 async function withTempDir(fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "reactive-axi-test-"));
@@ -473,5 +474,123 @@ test("queuePrompts normalizes a react-component target through the same path", a
     assert.equal(updated.prompts[0].target.type, "react-component");
     assert.equal(updated.prompts[0].target.clicked.fileName, "App.jsx");
     assert.equal(updated.prompts[0].target.clicked.lineNumber, 24);
+  });
+});
+
+test("SessionStore.attachmentsRoot defaults to the directory containing the state file", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    assert.equal(store.attachmentsRoot, dir);
+  });
+});
+
+test("SessionStore.attachmentsRoot can be overridden explicitly", async () => {
+  await withTempDir(async (dir) => {
+    const otherRoot = path.join(dir, "elsewhere");
+    const store = new SessionStore(path.join(dir, "state.json"), { attachmentsRoot: otherRoot });
+    assert.equal(store.attachmentsRoot, otherRoot);
+  });
+});
+
+test("queuePrompts keeps a well-formed attachment referencing this session's own attachments dir", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const opened = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const attachmentPath = path.join(attachmentsDir(store.attachmentsRoot, opened.key), "img1.png");
+    const session = await store.queuePrompts(opened.key, {
+      prompts: [
+        {
+          prompt: "fix this",
+          tag: "element",
+          kind: "bug",
+          attachments: [{ id: "img1", mime: "image/png", path: attachmentPath }],
+        },
+      ],
+    });
+    assert.equal(session.prompts[0].attachments.length, 1);
+    assert.equal(session.prompts[0].attachments[0].path, attachmentPath);
+    assert.equal(session.prompts[0].attachments[0].mime, "image/png");
+  });
+});
+
+test("queuePrompts drops attachments with an unrecognized mime, a path outside this session's attachments dir, or missing fields", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const opened = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const ownDir = attachmentsDir(store.attachmentsRoot, opened.key);
+    const outsidePath = path.join(dir, "elsewhere.png");
+    const session = await store.queuePrompts(opened.key, {
+      prompts: [
+        {
+          prompt: "look",
+          tag: "message",
+          attachments: [
+            { id: "bad-mime", mime: "application/pdf", path: path.join(ownDir, "a.pdf") },
+            { id: "escape", mime: "image/png", path: outsidePath },
+            { mime: "image/png", path: path.join(ownDir, "b.png") }, // missing id
+          ],
+        },
+      ],
+    });
+    assert.equal(session.prompts[0].attachments, undefined);
+  });
+});
+
+test("queuePrompts caps attachments per prompt at 6", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const opened = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const base = attachmentsDir(store.attachmentsRoot, opened.key);
+    const attachments = Array.from({ length: 9 }, (_, index) => ({
+      id: `img${index}`,
+      mime: "image/png",
+      path: path.join(base, `img${index}.png`),
+    }));
+    const session = await store.queuePrompts(opened.key, {
+      prompts: [{ prompt: "many images", tag: "message", attachments }],
+    });
+    assert.equal(session.prompts[0].attachments.length, 6);
+  });
+});
+
+test("queuePrompts records attachments on the synced chat entry, even with no text", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const opened = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const attachmentPath = path.join(attachmentsDir(store.attachmentsRoot, opened.key), "img1.png");
+    const session = await store.queuePrompts(opened.key, {
+      prompts: [
+        {
+          prompt: "",
+          tag: "message",
+          attachments: [{ id: "img1", mime: "image/png", path: attachmentPath }],
+        },
+      ],
+    });
+    assert.equal(session.chat.length, 1);
+    assert.equal(session.chat[0].attachments.length, 1);
+    assert.equal(session.chat[0].attachments[0].path, attachmentPath);
+  });
+});
+
+test("endSession removes the session's attachments directory", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const opened = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    const attachDir = attachmentsDir(store.attachmentsRoot, opened.key);
+    await mkdir(attachDir, { recursive: true });
+    await writeFile(path.join(attachDir, "img.png"), Buffer.from([1, 2, 3]));
+
+    await store.endSession(opened.key, "user");
+
+    await assert.rejects(() => readdir(attachDir));
+  });
+});
+
+test("endSession does not throw when the attachments directory never existed", async () => {
+  await withTempDir(async (dir) => {
+    const store = new SessionStore(path.join(dir, "state.json"));
+    const opened = await store.upsertSession(dir, "http://127.0.0.1:4388/session/abc");
+    await assert.doesNotReject(() => store.endSession(opened.key, "user"));
   });
 });
