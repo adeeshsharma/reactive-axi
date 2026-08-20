@@ -167,10 +167,12 @@ function createAttachmentController(container, onChange) {
 function wireAttachInput(textareaEl, fileInputEl, attachBtnEl, controller) {
   attachBtnEl.addEventListener("click", () => fileInputEl.click());
   fileInputEl.addEventListener("change", () => {
+    if (sessionEnded) return;
     if (fileInputEl.files && fileInputEl.files.length > 0) controller.addFiles(fileInputEl.files);
     fileInputEl.value = "";
   });
   textareaEl.addEventListener("paste", (event) => {
+    if (sessionEnded) return;
     const items = event.clipboardData?.items;
     if (!items) return;
     const files = Array.from(items)
