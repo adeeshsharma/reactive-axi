@@ -16,6 +16,7 @@ const chatThumbs = /** @type {HTMLDivElement} */ (document.getElementById("chatT
 const chatFileInput = /** @type {HTMLInputElement} */ (document.getElementById("chatFileInput"));
 const chatAttachBtn = /** @type {HTMLButtonElement} */ (document.getElementById("chatAttachBtn"));
 const sendBtn = /** @type {HTMLButtonElement} */ (document.getElementById("sendBtn"));
+const sendShortcutHint = /** @type {HTMLElement} */ (document.getElementById("sendShortcutHint"));
 const endBtn = /** @type {HTMLButtonElement} */ (document.getElementById("endBtn"));
 const presenceEl = /** @type {HTMLSpanElement} */ (document.getElementById("presence"));
 const presenceLabel = /** @type {HTMLSpanElement} */ (document.getElementById("presenceLabel"));
@@ -55,6 +56,7 @@ if (stackLabel) {
 // keydown handler below actually checks (event.metaKey || event.ctrlKey), just made visible.
 const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
 modeShortcutHint.textContent = isApplePlatform ? "⌘I" : "Ctrl I";
+sendShortcutHint.textContent = isApplePlatform ? "⌘Enter" : "Ctrl Enter";
 
 // Reloads only the iframe's own document - not this chrome page, not the dev server, not the
 // proxy. Setting src to about:blank then back forces a real navigation (a same-value

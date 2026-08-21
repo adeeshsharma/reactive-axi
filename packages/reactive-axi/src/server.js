@@ -838,6 +838,7 @@ export function createChromeHtml(session) {
       <input type="file" id="chatFileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
       <div class="actions">
         <button class="attach-btn" id="chatAttachBtn" type="button" title="Attach image" aria-label="Attach image">📎</button>
+        <kbd class="shortcut-hint" id="sendShortcutHint" title="Send to agent"></kbd>
         <button id="sendBtn" class="primary" type="button">Send to agent</button>
       </div>
     </div>
