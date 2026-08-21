@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.6](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.5...reactive-axi-v0.0.6) (2026-08-21)
+
+
+### Features
+
+* add image paste/upload attachments to annotations ([#8](https://github.com/adeeshsharma/reactive-axi/issues/8)) ([5504478](https://github.com/adeeshsharma/reactive-axi/commit/550447866c042de2167eb818a47aa555cc0d0ea9))
+
 ## [0.0.5](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.4...reactive-axi-v0.0.5) (2026-08-13)
 
 
