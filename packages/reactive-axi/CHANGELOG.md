@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.7](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.6...reactive-axi-v0.0.7) (2026-08-21)
+
+
+### Bug Fixes
+
+* retry proxy port bind on transient EADDRINUSE ([#10](https://github.com/adeeshsharma/reactive-axi/issues/10)) ([8406e86](https://github.com/adeeshsharma/reactive-axi/commit/8406e8606de8444b805ddf7d1b19773ab651cd76))
+
 ## [0.0.6](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.5...reactive-axi-v0.0.6) (2026-08-21)
 
 
