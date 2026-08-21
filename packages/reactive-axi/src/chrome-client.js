@@ -12,6 +12,9 @@ const frameWrap = /** @type {HTMLDivElement} */ (document.getElementById("frameW
 const frameBadge = /** @type {HTMLDivElement} */ (document.getElementById("frameBadge"));
 const chatLog = /** @type {HTMLDivElement} */ (document.getElementById("chatLog"));
 const chatInput = /** @type {HTMLTextAreaElement} */ (document.getElementById("chatInput"));
+const chatThumbs = /** @type {HTMLDivElement} */ (document.getElementById("chatThumbs"));
+const chatFileInput = /** @type {HTMLInputElement} */ (document.getElementById("chatFileInput"));
+const chatAttachBtn = /** @type {HTMLButtonElement} */ (document.getElementById("chatAttachBtn"));
 const sendBtn = /** @type {HTMLButtonElement} */ (document.getElementById("sendBtn"));
 const endBtn = /** @type {HTMLButtonElement} */ (document.getElementById("endBtn"));
 const presenceEl = /** @type {HTMLSpanElement} */ (document.getElementById("presence"));
@@ -27,6 +30,9 @@ const cardClose = /** @type {HTMLButtonElement} */ (document.getElementById("car
 const cardTypes = /** @type {HTMLDivElement} */ (document.getElementById("cardTypes"));
 const cardInput = /** @type {HTMLTextAreaElement} */ (document.getElementById("cardInput"));
 const cardQueueBtn = /** @type {HTMLButtonElement} */ (document.getElementById("cardQueueBtn"));
+const cardThumbs = /** @type {HTMLDivElement} */ (document.getElementById("cardThumbs"));
+const cardFileInput = /** @type {HTMLInputElement} */ (document.getElementById("cardFileInput"));
+const cardAttachBtn = /** @type {HTMLButtonElement} */ (document.getElementById("cardAttachBtn"));
 const queueSection = /** @type {HTMLDivElement} */ (document.getElementById("queueSection"));
 const queueCount = /** @type {HTMLSpanElement} */ (document.getElementById("queueCount"));
 const queueList = /** @type {HTMLDivElement} */ (document.getElementById("queueList"));
@@ -41,6 +47,146 @@ if (stackLabel) {
 }
 
 const KIND_LABELS = { change: "Change", question: "Question", comment: "Comment", bug: "Bug" };
+
+// ---------------------------------------------------------------------------
+// Image attachments - shared paste/upload handling for the annotation card
+// and the general composer. Each accepted image uploads immediately (on
+// paste or file selection, not batched with the eventual Queue/Send), so the
+// reviewer sees a thumbnail right away and a queued/sent prompt only ever
+// carries a small {id, path, mime} reference - never raw bytes.
+// ---------------------------------------------------------------------------
+
+// Duplicated from session-store.js's MAX_ATTACHMENTS/ATTACHMENT_MIME_TYPES -
+// this file is served raw with no bundler and no ES module imports (see the
+// top-of-file comment), so it can't share those constants directly. Keep
+// both in sync by hand if either changes.
+const MAX_ATTACHMENTS_PER_MESSAGE = 6;
+const ACCEPTED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** @typedef {{ id: string, path: string, mime: string, objectUrl: string }} Attachment */
+
+async function uploadAttachment(blob) {
+  const res = await fetch(`/api/${key}/attachments`, {
+    method: "POST",
+    headers: { "content-type": blob.type },
+    body: blob,
+  });
+  if (!res.ok) return null;
+  const saved = await res.json();
+  return { id: saved.id, path: saved.path, mime: saved.mime, objectUrl: URL.createObjectURL(blob) };
+}
+
+function renderThumbs(container, attachments, onRemove) {
+  container.innerHTML = "";
+  container.hidden = attachments.length === 0;
+  for (const attachment of attachments) {
+    const chip = document.createElement("div");
+    chip.className = "thumb-chip";
+    const img = document.createElement("img");
+    img.src = attachment.objectUrl;
+    img.alt = "attached image";
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "thumb-remove";
+    removeBtn.textContent = "×";
+    removeBtn.setAttribute("aria-label", "Remove image");
+    removeBtn.addEventListener("click", () => onRemove(attachment.id));
+    chip.append(img, removeBtn);
+    container.appendChild(chip);
+  }
+}
+
+// One controller per attach point (annotation card, composer). `onChange`
+// lets a caller (e.g. the composer's send-button label) react to uploads/
+// removals without this module needing to know about send-button state.
+function createAttachmentController(container, onChange) {
+  let list = /** @type {Attachment[]} */ ([]);
+
+  function refresh() {
+    renderThumbs(container, list, remove);
+    onChange?.();
+  }
+
+  // Intentionally does NOT call URL.revokeObjectURL here. After forQueue() has
+  // been called once (committing a card to the queue), a queue item's own
+  // attachments array holds copies of these same objectUrl strings - if the
+  // reviewer later reopens that item for edit (restore()) and removes a chip
+  // there, revoking would break the original queue item's thumbnail too if
+  // the edit is then cancelled instead of re-committed. Blob URLs are freed
+  // automatically when the page unloads; the bounded per-session retention
+  // until then is an accepted tradeoff, not an oversight.
+  function remove(id) {
+    list = list.filter((attachment) => attachment.id !== id);
+    refresh();
+  }
+
+  async function addFiles(fileList) {
+    const room = MAX_ATTACHMENTS_PER_MESSAGE - list.length;
+    if (room <= 0) return;
+    const accepted = Array.from(fileList)
+      .filter((file) => ACCEPTED_ATTACHMENT_TYPES.has(file.type))
+      .slice(0, room);
+    const uploaded = (await Promise.all(accepted.map(uploadAttachment))).filter(Boolean);
+    list = [...list, ...uploaded];
+    refresh();
+  }
+
+  // Strips down to what the server accepts on a prompt - never send the
+  // browser-local objectUrl.
+  function forSend() {
+    return list.map(({ id, path, mime }) => ({ id, path, mime }));
+  }
+
+  // Full local shape (including objectUrl), for stashing on a queue item so
+  // it can be re-rendered (queue thumbnails, re-opening for edit) without a
+  // round trip.
+  function forQueue() {
+    return list.map((attachment) => ({ ...attachment }));
+  }
+
+  // Resets this controller's own list WITHOUT revoking objectUrls - ownership
+  // of those blob: URLs passes to whatever forQueue() snapshot was taken
+  // (e.g. a queue item), which still needs them to render later. Only an
+  // explicit remove() (before the item is ever queued) revokes.
+  function clear() {
+    list = [];
+    refresh();
+  }
+
+  // Editing a queued item: the blob: object URLs created when these were
+  // first uploaded are still valid for this page's lifetime, so redisplaying
+  // them needs no re-fetch or server round trip.
+  function restore(attachments) {
+    list = attachments.map((attachment) => ({ ...attachment }));
+    refresh();
+  }
+
+  return { addFiles, forSend, forQueue, clear, restore };
+}
+
+function wireAttachInput(textareaEl, fileInputEl, attachBtnEl, controller) {
+  attachBtnEl.addEventListener("click", () => fileInputEl.click());
+  fileInputEl.addEventListener("change", () => {
+    if (sessionEnded) return;
+    if (fileInputEl.files && fileInputEl.files.length > 0) controller.addFiles(fileInputEl.files);
+    fileInputEl.value = "";
+  });
+  textareaEl.addEventListener("paste", (event) => {
+    if (sessionEnded) return;
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    const files = Array.from(items)
+      .filter((item) => item.kind === "file" && ACCEPTED_ATTACHMENT_TYPES.has(item.type))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (files.length > 0) controller.addFiles(files);
+  });
+}
+
+const cardAttachmentsCtl = createAttachmentController(cardThumbs);
+const chatAttachmentsCtl = createAttachmentController(chatThumbs, () => updateSendButtonLabel());
+wireAttachInput(cardInput, cardFileInput, cardAttachBtn, cardAttachmentsCtl);
+wireAttachInput(chatInput, chatFileInput, chatAttachBtn, chatAttachmentsCtl);
 
 // ---------------------------------------------------------------------------
 // Session-ended lockout - a blocking overlay over the reviewed app itself (not just a status
@@ -146,6 +292,7 @@ function openCardForSelection(result) {
   editingId = null;
   setCardKind("change");
   cardInput.value = "";
+  cardAttachmentsCtl.clear();
   positionCardNear(result.rect);
   // `result.clicked.componentName` for the three paths already fully resolved client-side
   // (debugSource, vue-component, svelte-component - always null for the latter, an honest
@@ -168,6 +315,7 @@ function openCardForEdit(item) {
   editingId = item.id;
   setCardKind(item.kind);
   cardInput.value = item.text;
+  cardAttachmentsCtl.restore(item.attachments || []);
   positionCardNear(item.rect);
   cardTarget.textContent = item.label || "message";
   cardTarget.title = cardTarget.textContent;
@@ -179,6 +327,7 @@ function closeCard() {
   annotationCard.hidden = true;
   pendingSelection = null;
   editingId = null;
+  cardAttachmentsCtl.clear();
 }
 
 cardClose.addEventListener("click", closeCard);
@@ -203,6 +352,7 @@ function commitCard({ alsoSend }) {
     if (item) {
       item.kind = currentKind;
       item.text = text;
+      item.attachments = cardAttachmentsCtl.forQueue();
     }
   } else {
     // The resolution tag tells us which inspector produced this (react-fiber-inspector.js,
@@ -260,8 +410,10 @@ function commitCard({ alsoSend }) {
       target,
       rect: pendingSelection && !pendingSelection.error ? pendingSelection.rect || null : null,
       label: target ? labelFor(target, pendingSelection.selector) : "General message",
+      attachments: cardAttachmentsCtl.forQueue(),
     });
   }
+  cardAttachmentsCtl.clear();
   closeCard();
   renderQueue();
   if (alsoSend) send();
@@ -319,7 +471,7 @@ window.addEventListener("message", (event) => {
  *   transformedUrl?: string, transformedLine?: number, transformedColumn?: number,
  *   fallbackCandidates?: unknown[] }} QueueItemTarget
  * @typedef {{ top: number, left: number, right: number, bottom: number, width: number, height: number }} QueueItemRect
- * @type {{ id: string, kind: string, text: string, target: QueueItemTarget | null, rect: QueueItemRect | null, label: string }[]}
+ * @type {{ id: string, kind: string, text: string, target: QueueItemTarget | null, rect: QueueItemRect | null, label: string, attachments?: Attachment[] }[]}
  */
 const queue = [];
 let queueIdCounter = 0;
@@ -342,6 +494,17 @@ function renderQueue() {
     text.className = "queue-item-text";
     text.textContent = item.text;
     body.append(label, text);
+    if (Array.isArray(item.attachments) && item.attachments.length > 0) {
+      const thumbs = document.createElement("div");
+      thumbs.className = "queue-item-thumbs";
+      for (const attachment of item.attachments) {
+        const img = document.createElement("img");
+        img.src = attachment.objectUrl;
+        img.alt = "attached image";
+        thumbs.appendChild(img);
+      }
+      body.appendChild(thumbs);
+    }
 
     const actions = document.createElement("div");
     actions.className = "queue-item-actions";
@@ -369,7 +532,7 @@ function renderQueue() {
 // Conversation history + composer
 // ---------------------------------------------------------------------------
 
-function appendMessage(role, text, kind) {
+function appendMessage(role, text, kind, attachments) {
   const div = document.createElement("div");
   div.className = `msg ${role}`;
   if (kind && KIND_LABELS[kind]) {
@@ -382,22 +545,45 @@ function appendMessage(role, text, kind) {
     div.appendChild(badge);
     div.appendChild(document.createElement("br"));
   }
-  div.appendChild(document.createTextNode(text));
+  if (text) div.appendChild(document.createTextNode(text));
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    const thumbs = document.createElement("div");
+    thumbs.className = "msg-thumbs";
+    const withPreview = attachments.filter((attachment) => attachment.objectUrl);
+    if (withPreview.length > 0) {
+      for (const attachment of withPreview) {
+        const img = document.createElement("img");
+        img.src = attachment.objectUrl;
+        img.alt = "attached image";
+        thumbs.appendChild(img);
+      }
+    } else {
+      // Synced from session.chat (e.g. a reload or a second tab) - the blob:
+      // URL created at upload time only exists in the tab that made it, so
+      // there is nothing displayable to re-fetch here. Say what's attached
+      // instead of showing a broken image.
+      const note = document.createElement("span");
+      note.className = "msg-thumbs-note";
+      note.textContent = `📎 ${attachments.length} image${attachments.length > 1 ? "s" : ""} attached`;
+      thumbs.appendChild(note);
+    }
+    div.appendChild(thumbs);
+  }
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
 function renderChat(chat) {
   chatLog.innerHTML = "";
-  for (const entry of chat) appendMessage(entry.role, entry.text, entry.kind);
+  for (const entry of chat) appendMessage(entry.role, entry.text, entry.kind, entry.attachments);
 }
 
 renderChat(sessionData.initialChat || []);
 renderQueue();
 
 function updateSendButtonLabel() {
-  const draftCount = chatInput.value.trim() ? 1 : 0;
-  const total = queue.length + draftCount;
+  const hasDraft = Boolean(chatInput.value.trim()) || chatAttachmentsCtl.forSend().length > 0;
+  const total = queue.length + (hasDraft ? 1 : 0);
   sendBtn.textContent = total > 0 ? `Send to agent (${total})` : "Send to agent";
 }
 chatInput.addEventListener("input", updateSendButtonLabel);
@@ -405,6 +591,7 @@ chatInput.addEventListener("input", updateSendButtonLabel);
 async function send() {
   if (sessionEnded) return;
   const draftText = chatInput.value.trim();
+  const draftAttachmentsForSend = chatAttachmentsCtl.forSend();
   const prompts = queue.map((item) => ({
     prompt: item.text,
     tag: item.target ? "element" : "message",
@@ -412,9 +599,19 @@ async function send() {
     selector: item.target?.selector || "",
     text: item.text.slice(0, 200),
     ...(item.target ? { target: item.target } : {}),
+    ...(item.attachments && item.attachments.length > 0
+      ? { attachments: item.attachments.map(({ id, path, mime }) => ({ id, path, mime })) }
+      : {}),
   }));
-  if (draftText) {
-    prompts.push({ prompt: draftText, tag: "message", kind: "comment", selector: "", text: draftText.slice(0, 200) });
+  if (draftText || draftAttachmentsForSend.length > 0) {
+    prompts.push({
+      prompt: draftText,
+      tag: "message",
+      kind: "comment",
+      selector: "",
+      text: draftText.slice(0, 200),
+      ...(draftAttachmentsForSend.length > 0 ? { attachments: draftAttachmentsForSend } : {}),
+    });
   }
   if (prompts.length === 0) return;
 
@@ -424,11 +621,14 @@ async function send() {
     body: JSON.stringify({ prompts }),
   });
 
-  for (const item of queue) appendMessage("user", item.text, item.kind);
-  if (draftText) appendMessage("user", draftText, "comment");
+  for (const item of queue) appendMessage("user", item.text, item.kind, item.attachments);
+  if (draftText || draftAttachmentsForSend.length > 0) {
+    appendMessage("user", draftText, "comment", chatAttachmentsCtl.forQueue());
+  }
 
   queue.length = 0;
   chatInput.value = "";
+  chatAttachmentsCtl.clear();
   renderQueue();
 }
 

@@ -6,9 +6,11 @@ import launchEditorMiddleware from "launch-editor-middleware";
 
 const chromeClientUrl = new URL("./chrome-client.js", import.meta.url);
 
+import { saveAttachment } from "./attachments.js";
 import { createDevServerManager } from "./dev-server-manager.js";
 import { injectSdk } from "./html-transform.js";
 import {
+  attachmentsDir,
   bindHost,
   extraAllowedHosts,
   findFreePort,
@@ -284,6 +286,29 @@ export async function serve({
       }
       res.json({ status: "queued", pending_prompts: session.pending_prompts });
       if (shouldEndSession) await shutdownIfNoLiveSessions();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/:key/attachments", express.raw({ type: "image/*", limit: "10mb" }), async (req, res, next) => {
+    try {
+      const session = await store.findByKey(req.params.key);
+      if (!session) {
+        res.status(404).json({ error: "session not found" });
+        return;
+      }
+      const buffer = Buffer.isBuffer(req.body) ? req.body : null;
+      if (!buffer || buffer.length === 0) {
+        res.status(400).json({ error: "empty body" });
+        return;
+      }
+      const saved = await saveAttachment({ buffer, dir: attachmentsDir(store.attachmentsRoot, req.params.key) });
+      if (!saved) {
+        res.status(415).json({ error: "unsupported image type" });
+        return;
+      }
+      res.json(saved);
     } catch (error) {
       next(error);
     }
@@ -703,6 +728,18 @@ export function createChromeHtml(session) {
   .queue-item-actions{display:flex;gap:.3em;flex:none;}
   .queue-item-actions button{padding:.2em .45em;font-size:.75em;border-radius:var(--radius-sm);}
 
+  /* image attachments */
+  .attach-btn{padding:.45em .6em;font-size:.95em;line-height:1;flex:none;}
+  .thumb-strip{display:flex;gap:.4em;flex-wrap:wrap;}
+  .thumb-chip{position:relative;width:44px;height:44px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--line);background:var(--panel-2);flex:none;}
+  .thumb-chip img{width:100%;height:100%;object-fit:cover;display:block;}
+  .thumb-chip .thumb-remove{position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;border:1px solid var(--line);background:var(--panel-3);color:var(--ink-dim);font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;}
+  .queue-item-thumbs{display:flex;gap:.3em;margin-top:.35em;}
+  .queue-item-thumbs img{width:32px;height:32px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--line);display:block;}
+  .msg-thumbs{display:flex;gap:.3em;margin-top:.4em;align-items:center;}
+  .msg-thumbs img{width:64px;height:64px;object-fit:cover;border-radius:var(--radius-sm);border:1px solid var(--line-soft);display:block;}
+  .msg-thumbs-note{font-size:.75em;color:var(--ink-faint);}
+
   /* session-ended lockout */
   .session-ended-overlay{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(10,11,13,.84);backdrop-filter:blur(2px);}
   .overlay-panel{max-width:320px;text-align:center;padding:1.7em 1.9em;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);box-shadow:0 20px 50px rgba(0,0,0,.5);}
@@ -741,7 +778,10 @@ export function createChromeHtml(session) {
         <button type="button" class="type-chip" data-kind="bug">Bug</button>
       </div>
       <textarea id="cardInput" placeholder="What should change here?"></textarea>
+      <div class="thumb-strip" id="cardThumbs" hidden></div>
+      <input type="file" id="cardFileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
       <div class="card-actions">
+        <button class="attach-btn" id="cardAttachBtn" type="button" title="Attach image" aria-label="Attach image">📎</button>
         <span class="card-hint">Enter to queue &middot; ⌘Enter to queue &amp; send</span>
         <button class="primary" id="cardQueueBtn" type="button">Queue</button>
       </div>
@@ -766,7 +806,10 @@ export function createChromeHtml(session) {
     <div class="composer">
       <div class="hint" id="annotationHint">Click an element in the app to attach a note to it, or just type a general message below.</div>
       <textarea id="chatInput" placeholder="Add a general message..."></textarea>
+      <div class="thumb-strip" id="chatThumbs" hidden></div>
+      <input type="file" id="chatFileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
       <div class="actions">
+        <button class="attach-btn" id="chatAttachBtn" type="button" title="Attach image" aria-label="Attach image">📎</button>
         <button id="sendBtn" class="primary" type="button">Send to agent</button>
       </div>
     </div>
