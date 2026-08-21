@@ -673,7 +673,26 @@ export function createChromeHtml(session) {
   .end-btn:hover:not(:disabled){border-color:var(--kind-bug);color:var(--kind-bug);background:var(--kind-bug-soft);}
   .end-btn:disabled{opacity:.55;cursor:default;}
 
-  .layout{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0;}
+  .icon-btn{font:inherit;border:1px solid var(--line);background:transparent;color:var(--ink-dim);border-radius:var(--radius-md);padding:.42em .65em;cursor:pointer;flex:none;line-height:1;font-size:.95em;}
+  .icon-btn:hover:not(:disabled){border-color:var(--ink-faint);color:var(--ink);}
+  .icon-btn:disabled{opacity:.55;cursor:default;}
+
+  .shortcut-hint{font-family:var(--mono);font-size:.68em;color:var(--ink-faint);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.2em .45em;background:var(--panel-2);flex:none;white-space:nowrap;}
+
+  .layout{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0;position:relative;transition:grid-template-columns .18s ease;}
+  .layout.panel-collapsed{grid-template-columns:1fr 0;}
+  .layout.panel-collapsed aside{overflow:hidden;}
+  /* Sits flush against the panel's own left edge (not centered on the border - a target that
+     straddles a hairline is ambiguous to aim for) and reuses .frame-badge's floating-overlay
+     treatment (dark translucent + blur) so it stays legible over whatever the iframe happens
+     to be rendering underneath, the same way .frame-badge already does. Generously sized -
+     26x68 is a real, easy target, not a sliver. */
+  .panel-toggle{position:absolute;top:50%;right:360px;transform:translateY(-50%);z-index:6;width:26px;height:68px;border-radius:var(--radius-md) 0 0 var(--radius-md);border:1px solid var(--signal-line);border-right:none;background:rgba(10,11,13,.78);backdrop-filter:blur(4px);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:1.1em;line-height:1;transition:right .18s ease,background .15s,color .15s;}
+  .panel-toggle:hover{background:rgba(10,11,13,.92);color:var(--ink);}
+  .layout.panel-collapsed .panel-toggle{right:0;border-radius:var(--radius-md);border-right:1px solid var(--signal-line);}
+  /* Unread-agent-reply count while the panel is collapsed - purely to pull attention back,
+     dismissed the moment the panel is expanded again (see chrome-client.js), never persisted. */
+  .unread-badge{position:absolute;top:-7px;left:-7px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--signal);color:var(--signal-ink);font-family:var(--mono);font-size:.65em;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px var(--bg);}
   .frame-wrap{position:relative;background:#fff;border:2px solid transparent;transition:border-color .15s;}
   .frame-wrap.annotate-active{border-color:var(--signal);}
   iframe{width:100%;height:100%;border:0;display:block;}
@@ -688,6 +707,12 @@ export function createChromeHtml(session) {
   .msg.user{background:var(--panel-3);align-self:flex-end;}
   .msg.agent{background:var(--panel-2);align-self:flex-start;border:1px solid var(--line-soft);}
   .msg-kind{display:inline-block;font-family:var(--mono);font-size:.66em;text-transform:uppercase;letter-spacing:.05em;padding:.15em .5em;border-radius:var(--radius-sm);margin-bottom:.35em;font-weight:600;}
+  .typing-bubble{width:fit-content;margin:0 .8em .6em;display:flex;gap:.3em;align-items:center;padding:.65em .8em;}
+  .typing-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);animation:typing-bounce 1.2s ease-in-out infinite;}
+  .typing-dot:nth-child(2){animation-delay:.15s;}
+  .typing-dot:nth-child(3){animation-delay:.3s;}
+  @keyframes typing-bounce{0%,60%,100%{opacity:.3;transform:translateY(0);}30%{opacity:1;transform:translateY(-3px);}}
+  @media (prefers-reduced-motion:reduce){.typing-dot{animation:none!important;}}
   .composer{border-top:1px solid var(--line);padding:.7em;display:flex;flex-direction:column;gap:.5em;}
   textarea{resize:vertical;min-height:3.5em;background:var(--bg);color:inherit;border:1px solid var(--line);border-radius:var(--radius-md);padding:.55em;font:inherit;}
   textarea:focus{outline:none;border-color:var(--signal-line);}
@@ -759,10 +784,12 @@ export function createChromeHtml(session) {
     <button type="button" class="segment active" id="modeSegAnnotate" aria-pressed="true">Annotate</button>
     <button type="button" class="segment" id="modeSegExplore" aria-pressed="false">Explore</button>
   </div>
+  <kbd class="shortcut-hint" id="modeShortcutHint" title="Toggle Annotate/Explore"></kbd>
+  <button class="icon-btn" id="refreshAppBtn" type="button" title="Refresh app" aria-label="Refresh app">⟳</button>
   <span class="status-chip" id="presence" data-state="waiting"><span class="status-dot"></span><span id="presenceLabel">waiting</span></span>
   <button class="end-btn" id="endBtn" type="button">End session</button>
 </div>
-<div class="layout">
+<div class="layout" id="layout">
   <div class="frame-wrap annotate-active" id="frameWrap">
     <div class="frame-badge" id="frameBadge">Annotate — click anything</div>
     <iframe id="artifact" sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-same-origin"></iframe>
@@ -795,9 +822,16 @@ export function createChromeHtml(session) {
       </div>
     </div>
   </div>
+  <button class="panel-toggle" id="panelToggle" type="button" title="Collapse panel" aria-label="Collapse panel" aria-expanded="true">
+    <span id="panelToggleIcon">›</span>
+    <span class="unread-badge" id="unreadBadge" hidden>0</span>
+  </button>
   <aside>
     <div class="panel-scroll">
       <div class="chat" id="chatLog"></div>
+      <div class="msg agent typing-bubble" id="typingBubble" hidden>
+        <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+      </div>
       <div class="queue" id="queueSection" hidden>
         <div class="queue-head">Queued (<span id="queueCount">0</span>)</div>
         <div class="queue-list" id="queueList"></div>
@@ -810,6 +844,7 @@ export function createChromeHtml(session) {
       <input type="file" id="chatFileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
       <div class="actions">
         <button class="attach-btn" id="chatAttachBtn" type="button" title="Attach image" aria-label="Attach image">📎</button>
+        <kbd class="shortcut-hint" id="sendShortcutHint" title="Send to agent"></kbd>
         <button id="sendBtn" class="primary" type="button">Send to agent</button>
       </div>
     </div>

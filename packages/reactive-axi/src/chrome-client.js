@@ -16,6 +16,7 @@ const chatThumbs = /** @type {HTMLDivElement} */ (document.getElementById("chatT
 const chatFileInput = /** @type {HTMLInputElement} */ (document.getElementById("chatFileInput"));
 const chatAttachBtn = /** @type {HTMLButtonElement} */ (document.getElementById("chatAttachBtn"));
 const sendBtn = /** @type {HTMLButtonElement} */ (document.getElementById("sendBtn"));
+const sendShortcutHint = /** @type {HTMLElement} */ (document.getElementById("sendShortcutHint"));
 const endBtn = /** @type {HTMLButtonElement} */ (document.getElementById("endBtn"));
 const presenceEl = /** @type {HTMLSpanElement} */ (document.getElementById("presence"));
 const presenceLabel = /** @type {HTMLSpanElement} */ (document.getElementById("presenceLabel"));
@@ -24,6 +25,13 @@ const projectRootLabel = /** @type {HTMLSpanElement} */ (document.getElementById
 const stackLabelEl = /** @type {HTMLSpanElement} */ (document.getElementById("stackLabel"));
 const modeSegAnnotate = /** @type {HTMLButtonElement} */ (document.getElementById("modeSegAnnotate"));
 const modeSegExplore = /** @type {HTMLButtonElement} */ (document.getElementById("modeSegExplore"));
+const modeShortcutHint = /** @type {HTMLElement} */ (document.getElementById("modeShortcutHint"));
+const refreshAppBtn = /** @type {HTMLButtonElement} */ (document.getElementById("refreshAppBtn"));
+const layoutEl = /** @type {HTMLDivElement} */ (document.getElementById("layout"));
+const panelToggle = /** @type {HTMLButtonElement} */ (document.getElementById("panelToggle"));
+const panelToggleIcon = /** @type {HTMLSpanElement} */ (document.getElementById("panelToggleIcon"));
+const unreadBadge = /** @type {HTMLSpanElement} */ (document.getElementById("unreadBadge"));
+const typingBubble = /** @type {HTMLDivElement} */ (document.getElementById("typingBubble"));
 const annotationCard = /** @type {HTMLDivElement} */ (document.getElementById("annotationCard"));
 const cardTarget = /** @type {HTMLSpanElement} */ (document.getElementById("cardTarget"));
 const cardClose = /** @type {HTMLButtonElement} */ (document.getElementById("cardClose"));
@@ -45,6 +53,26 @@ if (stackLabel) {
   stackLabelEl.textContent = stackLabel;
   stackLabelEl.hidden = false;
 }
+
+// Cmd on macOS/iOS, Ctrl everywhere else - matches the modifier setAnnotateMode's own
+// keydown handler below actually checks (event.metaKey || event.ctrlKey), just made visible.
+const isApplePlatform = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+modeShortcutHint.textContent = isApplePlatform ? "⌘I" : "Ctrl I";
+sendShortcutHint.textContent = isApplePlatform ? "⌘Enter" : "Ctrl Enter";
+
+// Reloads only the iframe's own document - not this chrome page, not the dev server, not the
+// proxy. Setting src to about:blank then back forces a real navigation (a same-value
+// reassignment can be silently coalesced by the browser); the target app's own HMR client
+// reconnects the same way it always does after any normal page load, nothing here talks to
+// dev-server-manager.js or proxy.js.
+refreshAppBtn.addEventListener("click", () => {
+  const current = frame.src;
+  if (!current) return;
+  frame.src = "about:blank";
+  requestAnimationFrame(() => {
+    frame.src = current;
+  });
+});
 
 const KIND_LABELS = { change: "Change", question: "Question", comment: "Comment", bug: "Bug" };
 
@@ -211,6 +239,38 @@ function showSessionEnded(endedBy) {
   endBtn.disabled = true;
   endBtn.textContent = "Session ended";
 }
+
+// ---------------------------------------------------------------------------
+// Chat panel collapse - pure screen-real-estate toggle for the iframe, no
+// persistence across reloads (starts expanded every time), no server involvement.
+// ---------------------------------------------------------------------------
+
+let panelCollapsed = false;
+let unreadCount = 0;
+
+function applyPanelCollapse() {
+  layoutEl.classList.toggle("panel-collapsed", panelCollapsed);
+  panelToggleIcon.textContent = panelCollapsed ? "‹" : "›";
+  panelToggle.setAttribute("aria-expanded", String(!panelCollapsed));
+  const label = panelCollapsed ? "Expand panel" : "Collapse panel";
+  panelToggle.title = label;
+  panelToggle.setAttribute("aria-label", label);
+}
+
+// Only counts while the panel is actually collapsed - a reviewer looking at an expanded
+// panel is already seeing replies arrive live, nothing to flag. Dismissed the instant the
+// panel is expanded again, not persisted anywhere - purely a "you missed something" nudge.
+function setUnreadCount(count) {
+  unreadCount = count;
+  unreadBadge.textContent = String(unreadCount);
+  unreadBadge.hidden = unreadCount === 0;
+}
+
+panelToggle.addEventListener("click", () => {
+  panelCollapsed = !panelCollapsed;
+  applyPanelCollapse();
+  if (!panelCollapsed) setUnreadCount(0);
+});
 
 // ---------------------------------------------------------------------------
 // Annotate / explore mode
@@ -650,6 +710,14 @@ endBtn.addEventListener("click", async () => {
   // this tab, another tab, or the agent itself is the one ending the session.
 });
 
+// "working" (queued feedback already delivered to the agent, per computePresence in
+// server.js) is the only state that means the agent is actually processing something right
+// now - the bubble mirrors that exactly, not "listening" (agent idle, waiting for input).
+function setTypingBubbleVisible(visible) {
+  typingBubble.hidden = !visible;
+  if (visible) chatLog.scrollTop = chatLog.scrollHeight;
+}
+
 const events = new EventSource(`/events/${key}`);
 events.addEventListener("chat-sync", (event) => {
   const { chat } = JSON.parse(event.data);
@@ -657,12 +725,15 @@ events.addEventListener("chat-sync", (event) => {
 });
 events.addEventListener("agent-reply", (event) => {
   const { text } = JSON.parse(event.data);
+  setTypingBubbleVisible(false);
   appendMessage("agent", text);
+  if (panelCollapsed) setUnreadCount(unreadCount + 1);
 });
 events.addEventListener("agent-presence", (event) => {
   const { state } = JSON.parse(event.data);
   presenceEl.dataset.state = state;
   presenceLabel.textContent = state;
+  setTypingBubbleVisible(state === "working");
 });
 events.addEventListener("session-ended", (event) => {
   const { ended_by } = JSON.parse(event.data);
