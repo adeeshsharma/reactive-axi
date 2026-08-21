@@ -692,7 +692,7 @@ export function createChromeHtml(session) {
   .layout.panel-collapsed .panel-toggle{right:0;border-radius:var(--radius-md);border-right:1px solid var(--signal-line);}
   /* Unread-agent-reply count while the panel is collapsed - purely to pull attention back,
      dismissed the moment the panel is expanded again (see chrome-client.js), never persisted. */
-  .unread-badge{position:absolute;top:-7px;right:-7px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--signal);color:var(--signal-ink);font-family:var(--mono);font-size:.65em;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px var(--bg);}
+  .unread-badge{position:absolute;top:-7px;left:-7px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--signal);color:var(--signal-ink);font-family:var(--mono);font-size:.65em;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px var(--bg);}
   .frame-wrap{position:relative;background:#fff;border:2px solid transparent;transition:border-color .15s;}
   .frame-wrap.annotate-active{border-color:var(--signal);}
   iframe{width:100%;height:100%;border:0;display:block;}
