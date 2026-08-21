@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.8](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.7...reactive-axi-v0.0.8) (2026-08-21)
+
+
+### Features
+
+* chat panel collapse, typing bubble, app refresh, shortcut hints, unread badge ([#12](https://github.com/adeeshsharma/reactive-axi/issues/12)) ([52c6729](https://github.com/adeeshsharma/reactive-axi/commit/52c6729d966a671cd72ad1defb9289988611d9f6))
+
 ## [0.0.7](https://github.com/adeeshsharma/reactive-axi/compare/reactive-axi-v0.0.6...reactive-axi-v0.0.7) (2026-08-21)
 
 
