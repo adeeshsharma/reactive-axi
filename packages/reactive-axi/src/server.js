@@ -682,9 +682,14 @@ export function createChromeHtml(session) {
   .layout{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0;position:relative;transition:grid-template-columns .18s ease;}
   .layout.panel-collapsed{grid-template-columns:1fr 0;}
   .layout.panel-collapsed aside{overflow:hidden;}
-  .panel-toggle{position:absolute;top:50%;right:360px;transform:translate(50%,-50%);z-index:6;width:20px;height:40px;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--panel-2);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:.8em;line-height:1;transition:right .18s ease;}
-  .panel-toggle:hover{color:var(--ink);border-color:var(--ink-faint);}
-  .layout.panel-collapsed .panel-toggle{right:0;}
+  /* Sits flush against the panel's own left edge (not centered on the border - a target that
+     straddles a hairline is ambiguous to aim for) and reuses .frame-badge's floating-overlay
+     treatment (dark translucent + blur) so it stays legible over whatever the iframe happens
+     to be rendering underneath, the same way .frame-badge already does. Generously sized -
+     26x68 is a real, easy target, not a sliver. */
+  .panel-toggle{position:absolute;top:50%;right:360px;transform:translateY(-50%);z-index:6;width:26px;height:68px;border-radius:var(--radius-md) 0 0 var(--radius-md);border:1px solid var(--signal-line);border-right:none;background:rgba(10,11,13,.78);backdrop-filter:blur(4px);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:1.1em;line-height:1;transition:right .18s ease,background .15s,color .15s;}
+  .panel-toggle:hover{background:rgba(10,11,13,.92);color:var(--ink);}
+  .layout.panel-collapsed .panel-toggle{right:0;border-radius:var(--radius-md);border-right:1px solid var(--signal-line);}
   .frame-wrap{position:relative;background:#fff;border:2px solid transparent;transition:border-color .15s;}
   .frame-wrap.annotate-active{border-color:var(--signal);}
   iframe{width:100%;height:100%;border:0;display:block;}
