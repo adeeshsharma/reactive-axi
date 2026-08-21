@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -7,7 +8,7 @@ import test from "node:test";
 import WebSocket from "ws";
 
 import { createDevServerManager } from "../src/dev-server-manager.js";
-import { findFreePort } from "../src/paths.js";
+import { findFreePort, LOOPBACK_HOST } from "../src/paths.js";
 import { startSessionProxy } from "../src/proxy.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +37,7 @@ test("startSessionProxy: injects into HTML, passes through assets, keeps HMR ali
   try {
     const { internalPort } = await manager.start({ projectRoot: FIXTURE_ROOT, sessionKeyValue, publicPort });
 
-    proxy = startSessionProxy({
+    proxy = await startSessionProxy({
       publicPort,
       internalPort,
       transformHtml: (html) => {
@@ -89,5 +90,69 @@ test("startSessionProxy: injects into HTML, passes through assets, keeps HMR ali
   } finally {
     if (proxy) await proxy.close();
     await manager.stopAll();
+  }
+});
+
+// findFreePort() only observes a port as free at that instant (it opens a probe server,
+// reads the port, closes it) - nothing reserves it. By the time a caller actually binds
+// that same port, another process may have already taken it. These two tests force that
+// exact race deterministically, instead of relying on it happening to occur naturally.
+test("startSessionProxy retries and succeeds once a transiently-occupied port frees up", async () => {
+  const publicPort = await findFreePort();
+  const blocker = createServer();
+  await new Promise((resolve) => blocker.listen(publicPort, LOOPBACK_HOST, () => resolve(undefined)));
+
+  // Release the port partway through startSessionProxy's retry budget - well before it's
+  // exhausted - so a later retry, not the first attempt, is what succeeds.
+  setTimeout(() => blocker.close(), 150);
+
+  let proxy;
+  try {
+    proxy = await startSessionProxy({
+      publicPort,
+      internalPort: publicPort, // never actually routed to in this test - no request is made
+      transformHtml: (html) => html,
+    });
+    assert.equal(proxy.server.address().port, publicPort);
+  } finally {
+    if (proxy) await proxy.close();
+  }
+});
+
+test("startSessionProxy rejects with the underlying EADDRINUSE once retries are exhausted", async () => {
+  const publicPort = await findFreePort();
+  const blocker = createServer();
+  await new Promise((resolve) => blocker.listen(publicPort, LOOPBACK_HOST, () => resolve(undefined)));
+
+  try {
+    await assert.rejects(
+      () => startSessionProxy({ publicPort, internalPort: publicPort, transformHtml: (html) => html }),
+      (error) => /** @type {NodeJS.ErrnoException} */ (error).code === "EADDRINUSE",
+    );
+  } finally {
+    await new Promise((resolve) => blocker.close(resolve));
+  }
+});
+
+test("startSessionProxy attaches a permanent handler so a post-bind server error is logged, not thrown", async () => {
+  const publicPort = await findFreePort();
+  const lines = [];
+  let proxy;
+  try {
+    proxy = await startSessionProxy({
+      publicPort,
+      internalPort: publicPort,
+      transformHtml: (html) => html,
+      log: (line) => lines.push(line),
+    });
+    // A real post-bind failure (e.g. EMFILE while accepting a connection) surfaces the same
+    // way: an 'error' event on the already-listening server, well after listenWithRetry's own
+    // bind-time handling has already resolved and detached its own listener. An EventEmitter
+    // with no 'error' listener throws synchronously on emit - so this line alone is proof the
+    // permanent handler is attached: if it weren't, this emit() call itself would throw.
+    proxy.server.emit("error", Object.assign(new Error("simulated post-bind failure"), { code: "EMFILE" }));
+    assert.ok(lines.some((line) => line.includes("simulated post-bind failure")));
+  } finally {
+    if (proxy) await proxy.close();
   }
 });
