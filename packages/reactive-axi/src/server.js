@@ -673,7 +673,18 @@ export function createChromeHtml(session) {
   .end-btn:hover:not(:disabled){border-color:var(--kind-bug);color:var(--kind-bug);background:var(--kind-bug-soft);}
   .end-btn:disabled{opacity:.55;cursor:default;}
 
-  .layout{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0;}
+  .icon-btn{font:inherit;border:1px solid var(--line);background:transparent;color:var(--ink-dim);border-radius:var(--radius-md);padding:.42em .65em;cursor:pointer;flex:none;line-height:1;font-size:.95em;}
+  .icon-btn:hover:not(:disabled){border-color:var(--ink-faint);color:var(--ink);}
+  .icon-btn:disabled{opacity:.55;cursor:default;}
+
+  .shortcut-hint{font-family:var(--mono);font-size:.68em;color:var(--ink-faint);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.2em .45em;background:var(--panel-2);flex:none;white-space:nowrap;}
+
+  .layout{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0;position:relative;transition:grid-template-columns .18s ease;}
+  .layout.panel-collapsed{grid-template-columns:1fr 0;}
+  .layout.panel-collapsed aside{overflow:hidden;}
+  .panel-toggle{position:absolute;top:50%;right:360px;transform:translate(50%,-50%);z-index:6;width:20px;height:40px;border-radius:var(--radius-md);border:1px solid var(--line);background:var(--panel-2);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:.8em;line-height:1;transition:right .18s ease;}
+  .panel-toggle:hover{color:var(--ink);border-color:var(--ink-faint);}
+  .layout.panel-collapsed .panel-toggle{right:0;}
   .frame-wrap{position:relative;background:#fff;border:2px solid transparent;transition:border-color .15s;}
   .frame-wrap.annotate-active{border-color:var(--signal);}
   iframe{width:100%;height:100%;border:0;display:block;}
@@ -688,6 +699,12 @@ export function createChromeHtml(session) {
   .msg.user{background:var(--panel-3);align-self:flex-end;}
   .msg.agent{background:var(--panel-2);align-self:flex-start;border:1px solid var(--line-soft);}
   .msg-kind{display:inline-block;font-family:var(--mono);font-size:.66em;text-transform:uppercase;letter-spacing:.05em;padding:.15em .5em;border-radius:var(--radius-sm);margin-bottom:.35em;font-weight:600;}
+  .typing-bubble{width:fit-content;margin:0 .8em .6em;display:flex;gap:.3em;align-items:center;padding:.65em .8em;}
+  .typing-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);animation:typing-bounce 1.2s ease-in-out infinite;}
+  .typing-dot:nth-child(2){animation-delay:.15s;}
+  .typing-dot:nth-child(3){animation-delay:.3s;}
+  @keyframes typing-bounce{0%,60%,100%{opacity:.3;transform:translateY(0);}30%{opacity:1;transform:translateY(-3px);}}
+  @media (prefers-reduced-motion:reduce){.typing-dot{animation:none!important;}}
   .composer{border-top:1px solid var(--line);padding:.7em;display:flex;flex-direction:column;gap:.5em;}
   textarea{resize:vertical;min-height:3.5em;background:var(--bg);color:inherit;border:1px solid var(--line);border-radius:var(--radius-md);padding:.55em;font:inherit;}
   textarea:focus{outline:none;border-color:var(--signal-line);}
@@ -759,10 +776,12 @@ export function createChromeHtml(session) {
     <button type="button" class="segment active" id="modeSegAnnotate" aria-pressed="true">Annotate</button>
     <button type="button" class="segment" id="modeSegExplore" aria-pressed="false">Explore</button>
   </div>
+  <kbd class="shortcut-hint" id="modeShortcutHint" title="Toggle Annotate/Explore"></kbd>
+  <button class="icon-btn" id="refreshAppBtn" type="button" title="Refresh app" aria-label="Refresh app">⟳</button>
   <span class="status-chip" id="presence" data-state="waiting"><span class="status-dot"></span><span id="presenceLabel">waiting</span></span>
   <button class="end-btn" id="endBtn" type="button">End session</button>
 </div>
-<div class="layout">
+<div class="layout" id="layout">
   <div class="frame-wrap annotate-active" id="frameWrap">
     <div class="frame-badge" id="frameBadge">Annotate — click anything</div>
     <iframe id="artifact" sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-same-origin"></iframe>
@@ -795,9 +814,13 @@ export function createChromeHtml(session) {
       </div>
     </div>
   </div>
+  <button class="panel-toggle" id="panelToggle" type="button" title="Collapse panel" aria-label="Collapse panel" aria-expanded="true">›</button>
   <aside>
     <div class="panel-scroll">
       <div class="chat" id="chatLog"></div>
+      <div class="msg agent typing-bubble" id="typingBubble" hidden>
+        <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+      </div>
       <div class="queue" id="queueSection" hidden>
         <div class="queue-head">Queued (<span id="queueCount">0</span>)</div>
         <div class="queue-list" id="queueList"></div>
