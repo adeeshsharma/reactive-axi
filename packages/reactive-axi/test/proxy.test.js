@@ -102,8 +102,8 @@ test("startSessionProxy retries and succeeds once a transiently-occupied port fr
   const blocker = createServer();
   await new Promise((resolve) => blocker.listen(publicPort, LOOPBACK_HOST, () => resolve(undefined)));
 
-  // Release the port shortly after startSessionProxy's first bind attempt fails - well
-  // within its retry budget - so the retry (not the initial attempt) is what succeeds.
+  // Release the port partway through startSessionProxy's retry budget - well before it's
+  // exhausted - so a later retry, not the first attempt, is what succeeds.
   setTimeout(() => blocker.close(), 150);
 
   let proxy;
@@ -131,5 +131,28 @@ test("startSessionProxy rejects with the underlying EADDRINUSE once retries are 
     );
   } finally {
     await new Promise((resolve) => blocker.close(resolve));
+  }
+});
+
+test("startSessionProxy attaches a permanent handler so a post-bind server error is logged, not thrown", async () => {
+  const publicPort = await findFreePort();
+  const lines = [];
+  let proxy;
+  try {
+    proxy = await startSessionProxy({
+      publicPort,
+      internalPort: publicPort,
+      transformHtml: (html) => html,
+      log: (line) => lines.push(line),
+    });
+    // A real post-bind failure (e.g. EMFILE while accepting a connection) surfaces the same
+    // way: an 'error' event on the already-listening server, well after listenWithRetry's own
+    // bind-time handling has already resolved and detached its own listener. An EventEmitter
+    // with no 'error' listener throws synchronously on emit - so this line alone is proof the
+    // permanent handler is attached: if it weren't, this emit() call itself would throw.
+    proxy.server.emit("error", Object.assign(new Error("simulated post-bind failure"), { code: "EMFILE" }));
+    assert.ok(lines.some((line) => line.includes("simulated post-bind failure")));
+  } finally {
+    if (proxy) await proxy.close();
   }
 });

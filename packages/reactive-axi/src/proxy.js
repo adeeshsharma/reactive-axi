@@ -40,7 +40,11 @@ async function listenWithRetry(app, port, host, log) {
         server.once("error", reject);
       });
     } catch (error) {
-      if (error?.code !== "EADDRINUSE" || attempt === LISTEN_RETRY_ATTEMPTS) throw error;
+      if (error?.code !== "EADDRINUSE") throw error;
+      if (attempt === LISTEN_RETRY_ATTEMPTS) {
+        log(`port ${port} still in use after ${attempt}/${LISTEN_RETRY_ATTEMPTS} attempts, giving up`);
+        throw error;
+      }
       log(`port ${port} already in use, retrying (${attempt}/${LISTEN_RETRY_ATTEMPTS})`);
       await new Promise((resolve) => setTimeout(resolve, LISTEN_RETRY_DELAY_MS));
     }
@@ -78,6 +82,15 @@ export async function startSessionProxy({ publicPort, internalPort, transformHtm
 
   const server = await listenWithRetry(app, publicPort, LOOPBACK_HOST, log);
   server.on("upgrade", proxy.upgrade);
+  // listenWithRetry only guards the bind-time window; the server stays alive for the whole
+  // session after that. A post-bind runtime error (e.g. EMFILE/ENFILE under fd exhaustion
+  // while accepting connections) is rare but real, and Node throws an unhandled 'error'
+  // event as an uncaught exception - the exact failure mode this fix exists to close, just
+  // outside the retry window. Log and let the process live; a session going quietly
+  // unreachable is far better than crashing the whole control server.
+  server.on("error", (err) => {
+    log(`proxy server error (public=${publicPort} internal=${internalPort}): ${err.message}`);
+  });
 
   return {
     server,
