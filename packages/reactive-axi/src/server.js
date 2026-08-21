@@ -690,6 +690,9 @@ export function createChromeHtml(session) {
   .panel-toggle{position:absolute;top:50%;right:360px;transform:translateY(-50%);z-index:6;width:26px;height:68px;border-radius:var(--radius-md) 0 0 var(--radius-md);border:1px solid var(--signal-line);border-right:none;background:rgba(10,11,13,.78);backdrop-filter:blur(4px);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:1.1em;line-height:1;transition:right .18s ease,background .15s,color .15s;}
   .panel-toggle:hover{background:rgba(10,11,13,.92);color:var(--ink);}
   .layout.panel-collapsed .panel-toggle{right:0;border-radius:var(--radius-md);border-right:1px solid var(--signal-line);}
+  /* Unread-agent-reply count while the panel is collapsed - purely to pull attention back,
+     dismissed the moment the panel is expanded again (see chrome-client.js), never persisted. */
+  .unread-badge{position:absolute;top:-7px;right:-7px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--signal);color:var(--signal-ink);font-family:var(--mono);font-size:.65em;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px var(--bg);}
   .frame-wrap{position:relative;background:#fff;border:2px solid transparent;transition:border-color .15s;}
   .frame-wrap.annotate-active{border-color:var(--signal);}
   iframe{width:100%;height:100%;border:0;display:block;}
@@ -819,7 +822,10 @@ export function createChromeHtml(session) {
       </div>
     </div>
   </div>
-  <button class="panel-toggle" id="panelToggle" type="button" title="Collapse panel" aria-label="Collapse panel" aria-expanded="true">›</button>
+  <button class="panel-toggle" id="panelToggle" type="button" title="Collapse panel" aria-label="Collapse panel" aria-expanded="true">
+    <span id="panelToggleIcon">›</span>
+    <span class="unread-badge" id="unreadBadge" hidden>0</span>
+  </button>
   <aside>
     <div class="panel-scroll">
       <div class="chat" id="chatLog"></div>

@@ -29,6 +29,8 @@ const modeShortcutHint = /** @type {HTMLElement} */ (document.getElementById("mo
 const refreshAppBtn = /** @type {HTMLButtonElement} */ (document.getElementById("refreshAppBtn"));
 const layoutEl = /** @type {HTMLDivElement} */ (document.getElementById("layout"));
 const panelToggle = /** @type {HTMLButtonElement} */ (document.getElementById("panelToggle"));
+const panelToggleIcon = /** @type {HTMLSpanElement} */ (document.getElementById("panelToggleIcon"));
+const unreadBadge = /** @type {HTMLSpanElement} */ (document.getElementById("unreadBadge"));
 const typingBubble = /** @type {HTMLDivElement} */ (document.getElementById("typingBubble"));
 const annotationCard = /** @type {HTMLDivElement} */ (document.getElementById("annotationCard"));
 const cardTarget = /** @type {HTMLSpanElement} */ (document.getElementById("cardTarget"));
@@ -244,19 +246,30 @@ function showSessionEnded(endedBy) {
 // ---------------------------------------------------------------------------
 
 let panelCollapsed = false;
+let unreadCount = 0;
 
 function applyPanelCollapse() {
   layoutEl.classList.toggle("panel-collapsed", panelCollapsed);
-  panelToggle.textContent = panelCollapsed ? "‹" : "›";
+  panelToggleIcon.textContent = panelCollapsed ? "‹" : "›";
   panelToggle.setAttribute("aria-expanded", String(!panelCollapsed));
   const label = panelCollapsed ? "Expand panel" : "Collapse panel";
   panelToggle.title = label;
   panelToggle.setAttribute("aria-label", label);
 }
 
+// Only counts while the panel is actually collapsed - a reviewer looking at an expanded
+// panel is already seeing replies arrive live, nothing to flag. Dismissed the instant the
+// panel is expanded again, not persisted anywhere - purely a "you missed something" nudge.
+function setUnreadCount(count) {
+  unreadCount = count;
+  unreadBadge.textContent = String(unreadCount);
+  unreadBadge.hidden = unreadCount === 0;
+}
+
 panelToggle.addEventListener("click", () => {
   panelCollapsed = !panelCollapsed;
   applyPanelCollapse();
+  if (!panelCollapsed) setUnreadCount(0);
 });
 
 // ---------------------------------------------------------------------------
@@ -714,6 +727,7 @@ events.addEventListener("agent-reply", (event) => {
   const { text } = JSON.parse(event.data);
   setTypingBubbleVisible(false);
   appendMessage("agent", text);
+  if (panelCollapsed) setUnreadCount(unreadCount + 1);
 });
 events.addEventListener("agent-presence", (event) => {
   const { state } = JSON.parse(event.data);
