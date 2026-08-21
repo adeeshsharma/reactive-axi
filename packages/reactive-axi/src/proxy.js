@@ -11,6 +11,44 @@ import { LOOPBACK_HOST } from "./paths.js";
 // here is exactly what Phase 0 Spike A proved works end to end, including a real
 // file-edit-triggers-a-real-HMR-update round trip - this is that proven code, not a
 // reimplementation from scratch.
+// findFreePort() (paths.js) only observes a port as free at the instant it probes - nothing
+// reserves it. Real time elapses between that probe and this bind (spawning and waiting on
+// the target project's own dev server), so another process can take the port first. Retrying
+// the SAME port a few times, rather than asking for a different one, matters: by the time
+// this runs, the target dev server has typically already been started expecting to be
+// reverse-proxied through exactly this public port (e.g. Vite's own server.hmr.clientPort) -
+// silently switching to a different port here would leave HMR pointed at the wrong place.
+const LISTEN_RETRY_ATTEMPTS = 5;
+const LISTEN_RETRY_DELAY_MS = 100;
+
+/**
+ * @param {import("express").Express} app
+ * @param {number} port
+ * @param {string} host
+ * @param {(line: string) => void} log
+ * @returns {Promise<import("node:http").Server>}
+ */
+async function listenWithRetry(app, port, host, log) {
+  for (let attempt = 1; attempt <= LISTEN_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const server = app.listen(port, host);
+        server.once("listening", () => {
+          server.removeListener("error", reject);
+          resolve(server);
+        });
+        server.once("error", reject);
+      });
+    } catch (error) {
+      if (error?.code !== "EADDRINUSE" || attempt === LISTEN_RETRY_ATTEMPTS) throw error;
+      log(`port ${port} already in use, retrying (${attempt}/${LISTEN_RETRY_ATTEMPTS})`);
+      await new Promise((resolve) => setTimeout(resolve, LISTEN_RETRY_DELAY_MS));
+    }
+  }
+  // Unreachable - the loop above always either returns or throws.
+  throw new Error(`failed to bind port ${port} after ${LISTEN_RETRY_ATTEMPTS} attempts`);
+}
+
 /**
  * @param {object} options
  * @param {number} options.publicPort
@@ -18,7 +56,7 @@ import { LOOPBACK_HOST } from "./paths.js";
  * @param {(html: string) => string} options.transformHtml
  * @param {(line: string) => void} [options.log]
  */
-export function startSessionProxy({ publicPort, internalPort, transformHtml, log = () => {} }) {
+export async function startSessionProxy({ publicPort, internalPort, transformHtml, log = () => {} }) {
   const app = express();
   const proxy = createProxyMiddleware({
     target: `http://${LOOPBACK_HOST}:${internalPort}`,
@@ -38,7 +76,7 @@ export function startSessionProxy({ publicPort, internalPort, transformHtml, log
   });
   app.use(proxy);
 
-  const server = app.listen(publicPort, LOOPBACK_HOST);
+  const server = await listenWithRetry(app, publicPort, LOOPBACK_HOST, log);
   server.on("upgrade", proxy.upgrade);
 
   return {

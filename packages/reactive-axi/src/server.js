@@ -163,7 +163,7 @@ export async function serve({
       publicPort: publicProxyPort,
     });
     const controlServerBaseUrl = `http://${hostForUrl(linkHostName)}:${publicPort}`;
-    const proxy = startSessionProxy({
+    const proxy = await startSessionProxy({
       publicPort: publicProxyPort,
       internalPort,
       transformHtml: (html) => injectSdk(html, key, controlServerBaseUrl),
